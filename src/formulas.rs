@@ -7,14 +7,14 @@ const OPERATORS: [&'static str; 18] = [
 
 #[derive(Debug, PartialEq)]
 pub enum FormulaPartType {
-    FUNCTION,
+    Function,
     FunctionArg,
-    REFERENCE,
-    NUMBER,
-    STRING,
-    BOOLEAN,
-    OPERATOR,
-    PARENT,
+    Reference,
+    Number,
+    String,
+    Boolean,
+    Operator,
+    Parent,
 }
 
 #[derive(Debug)]
@@ -133,7 +133,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<FormulaPart>, ()> {
                 }
 
                 parsed.push(FormulaPart {
-                    part_type: FormulaPartType::FUNCTION,
+                    part_type: FormulaPartType::Function,
                     children: function_args_parsed,
                     content: function_name[..function_name.len() - 1].to_string(), // Remove the trailing parentheses
                 });
@@ -158,7 +158,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<FormulaPart>, ()> {
                 return Err(());
             }
             parsed.push(FormulaPart {
-                part_type: FormulaPartType::PARENT,
+                part_type: FormulaPartType::Parent,
                 children: paren_parsed.unwrap(),
                 content: String::new(),
             });
@@ -173,7 +173,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<FormulaPart>, ()> {
             if &formula[parse_idx..cmp::min(parse_idx + operator.len(), formula.len())] == operator
             {
                 parsed.push(FormulaPart {
-                    part_type: FormulaPartType::OPERATOR,
+                    part_type: FormulaPartType::Operator,
                     children: vec![],
                     content: String::from(operator),
                 });
@@ -201,7 +201,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<FormulaPart>, ()> {
 
             if digits.len() > 0 {
                 parsed.push(FormulaPart {
-                    part_type: FormulaPartType::NUMBER,
+                    part_type: FormulaPartType::Number,
                     children: vec![],
                     content: digits,
                 });
@@ -213,7 +213,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<FormulaPart>, ()> {
         if char == '"' {
             let ending = naive_parse_string(formula, parse_idx).unwrap_or(formula.len() - 1);
             parsed.push(FormulaPart {
-                part_type: FormulaPartType::STRING,
+                part_type: FormulaPartType::String,
                 children: vec![],
                 content: formula[parse_idx + 1..ending].to_string(),
             });
@@ -227,7 +227,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<FormulaPart>, ()> {
         {
             parse_idx = parse_idx + "TRUE".len();
             parsed.push(FormulaPart {
-                part_type: FormulaPartType::BOOLEAN,
+                part_type: FormulaPartType::Boolean,
                 children: vec![],
                 content: "TRUE".to_string(),
             })
@@ -237,7 +237,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<FormulaPart>, ()> {
         {
             parse_idx = parse_idx + "FALSE".len();
             parsed.push(FormulaPart {
-                part_type: FormulaPartType::BOOLEAN,
+                part_type: FormulaPartType::Boolean,
                 children: vec![],
                 content: "FALSE".to_string(),
             })
@@ -266,7 +266,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<FormulaPart>, ()> {
                 parse_idx -= 1;
 
                 parsed.push(FormulaPart {
-                    part_type: FormulaPartType::REFERENCE,
+                    part_type: FormulaPartType::Reference,
                     children: vec![],
                     content: reference.to_ascii_uppercase(),
                 });
@@ -280,4 +280,14 @@ pub fn parse_formula(formula: &str) -> Result<Vec<FormulaPart>, ()> {
     }
 
     Ok(parsed)
+}
+
+pub fn eval_formula(formula: &str) -> String {
+    if let Ok(parsed) = parse_formula(formula) {
+        for part in parsed {
+            if part.part_type == FormulaPartType::
+        }
+    } else {
+        String::from("#ERROR")
+    }
 }
