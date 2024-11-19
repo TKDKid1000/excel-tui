@@ -113,6 +113,8 @@ name = "excel-tui"
 version = "0.1.0"
 dependencies = [
  "ratatui 0.28.1",
+ "strum",
+ "strum_macros",
  "tui-input",
 ]
 

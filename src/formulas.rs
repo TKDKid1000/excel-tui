@@ -1,11 +1,13 @@
 use core::fmt;
 use std::{cmp, vec};
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
 const OPERATORS: [&'static str; 18] = [
     "-", "%", "^", "^", "*", "/", "+", "&", "=", ">=", "<=", "<>", "<", ">", "@", "#", ":", ",",
 ];
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum FormulaPartType {
     Function,
     FunctionArg,
@@ -17,11 +19,23 @@ pub enum FormulaPartType {
     Parent,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FormulaPart {
     pub part_type: FormulaPartType,
     pub children: Vec<FormulaPart>,
     pub content: String,
+}
+
+impl FormulaPart {
+    pub fn as_number(&self) -> Result<f32, ()> {
+        if self.part_type != FormulaPartType::Number {
+            return Err(());
+        }
+        if let Ok(parsed) = self.content.parse::<f32>() {
+            return Ok(parsed);
+        }
+        return Err(());
+    }
 }
 
 impl fmt::Display for FormulaPart {
@@ -282,12 +296,86 @@ pub fn parse_formula(formula: &str) -> Result<Vec<FormulaPart>, ()> {
     Ok(parsed)
 }
 
-pub fn eval_formula(formula: &str) -> String {
-    if let Ok(parsed) = parse_formula(formula) {
-        for part in parsed {
-            if part.part_type == FormulaPartType::
-        }
-    } else {
-        String::from("#ERROR")
+fn apply_operator(a: f32, b: f32, operator: &str) -> f32 {
+    match operator {
+        "+" => a + b,
+        "-" => a - b,
+        "*" => a * b,
+        "/" => a / b,
+        _ => a,
     }
+}
+
+#[derive(EnumIter)]
+enum OrderOpsState {
+    Reference,
+    Negation,
+    Percent,
+    Exponentiation,
+    Multiplication,
+    Addition,
+    Concatenation,
+    Comparison,
+}
+
+pub fn eval_formula(formula: &str) -> Result<String, ()> {
+    let mut evaluated_formula: Vec<FormulaPart> = vec![];
+
+    // for operation in OrderOpsState::iter() {
+    //     match operation {
+    //         OrderOpsState::Reference => {
+    //             todo!()
+    //         }
+    //         OrderOpsState::Negation => (),
+    //         OrderOpsState::Percent => (),
+    //         OrderOpsState::Exponentiation => (),
+    //         OrderOpsState::Multiplication => (),
+    //         OrderOpsState::Addition => (),
+    //         OrderOpsState::Concatenation => (),
+    //         OrderOpsState::Comparison => (),
+    //     }
+    // }
+
+    if let Ok(mut parsed) = parse_formula(formula) {
+        let mut idx = 0;
+        while idx < parsed.len() {
+            let part = &parsed[idx];
+            match part.part_type {
+                FormulaPartType::Operator => {
+                    if idx == 0 || idx >= parsed.len() {
+                        return Err(());
+                    }
+
+                    let prev = evaluated_formula.last().unwrap();
+                    let next = parsed[idx + 1].clone();
+
+                    let last_idx = evaluated_formula.len() - 1;
+
+                    if prev.part_type != FormulaPartType::String && prev.part_type == next.part_type
+                    {
+                        // Logic for if they're the same (numbers and slices)
+                        if prev.part_type == FormulaPartType::Number {
+                            evaluated_formula[last_idx].content = apply_operator(
+                                prev.as_number().unwrap(),
+                                next.as_number().unwrap(),
+                                part.content.as_str(),
+                            )
+                            .to_string();
+                            idx += 1;
+                        }
+                    }
+                    {
+                        // Treat everything elsae like strings and concat away
+                    }
+                }
+                FormulaPartType::Number => {
+                    evaluated_formula.push(part.clone());
+                }
+                _ => (),
+            }
+            idx += 1;
+        }
+    }
+
+    Ok(evaluated_formula[0].content.clone())
 }

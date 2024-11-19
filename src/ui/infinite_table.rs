@@ -7,7 +7,9 @@ use ratatui::{
 };
 
 use crate::{
-    app::{App, AppArea}, formulas, spreadsheet::{Spreadsheet, SpreadsheetCell, SPREADSHEET_MAX_COLS}
+    app::{App, AppArea},
+    formulas,
+    spreadsheet::{Spreadsheet, SpreadsheetCell, SPREADSHEET_MAX_COLS},
 };
 
 fn left_pad(string: String, length: usize, pad_char: char) -> String {
@@ -35,7 +37,7 @@ fn right_pad(string: String, length: usize, pad_char: char) -> String {
 fn render_cell(cell: &str, max_length: usize, decimals: u32) -> String {
     let mut rendered: String;
     if cell.starts_with("=") {
-        return formulas::eval_formula(cell);
+        return formulas::eval_formula(cell).unwrap(); // TODO: Unsafe unwrap
     }
 
     if let Ok(number) = cell.parse::<f32>() {
