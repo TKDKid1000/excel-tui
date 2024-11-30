@@ -5,6 +5,7 @@ use formulas::{eval_formula, parse_formula};
 use spreadsheet::Spreadsheet;
 
 mod app;
+mod formula_functions;
 mod formulas;
 mod spreadsheet;
 mod ui;
@@ -29,7 +30,7 @@ fn main() -> Result<()> {
     // let formula = //formulas::parse_formula("A5:B12,C5:D16").unwrap();
     // formulas::parse_formula("=SUM(--(COUNTIF(D5:D12,B5:B16, False)>=0))+\"Hello there\"+1+(A5:b26)")
     //     .unwrap();
-    let formula = "=6+3*22";
+    let formula = "=-3+-4*(2+(-2+3)*4)/5";
     println!("Parsed values:");
     for part in parse_formula(formula).iter() {
         println!("{:?}", part)

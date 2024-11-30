@@ -1,302 +1,209 @@
-use core::fmt;
-use std::{cmp, vec};
-use strum::IntoEnumIterator;
-use strum_macros::EnumIter;
+use std::process::id;
 
 const OPERATORS: [&'static str; 18] = [
     "-", "%", "^", "^", "*", "/", "+", "&", "=", ">=", "<=", "<>", "<", ">", "@", "#", ":", ",",
 ];
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum FormulaPartType {
+#[derive(Debug, PartialEq, Clone, Default)]
+pub enum TokenType {
+    // TODO: Implement the commented out tokens
+    //
     Function,
-    FunctionArg,
-    Reference,
+    // FunctionArg,
+    // Reference,
+    #[default] // I don't know if this is temporary or the actual default, but I'm too tired to
+    // figure it out.
     Number,
-    String,
-    Boolean,
+    // String,
+    // Boolean,
     Operator,
-    Parent,
+    LeftParen,
+    RightParen,
+    FuncLeftParen,
+    FuncRightParen,
 }
 
-#[derive(Debug, Clone)]
-pub struct FormulaPart {
-    pub part_type: FormulaPartType,
-    pub children: Vec<FormulaPart>,
+#[derive(Debug, Clone, Default)]
+pub struct Token {
+    pub token_type: TokenType,
     pub content: String,
 }
 
-impl FormulaPart {
-    pub fn as_number(&self) -> Result<f32, ()> {
-        if self.part_type != FormulaPartType::Number {
-            return Err(());
+pub fn find_close_paren(formula: &str, start_idx: usize) -> Option<usize> {
+    let mut paren_depth = 0;
+    for idx in start_idx..formula.len() {
+        match formula.chars().nth(idx).unwrap_or_default() {
+            '(' => paren_depth += 1,
+            ')' => paren_depth -= 1,
+            _ => (),
         }
-        if let Ok(parsed) = self.content.parse::<f32>() {
-            return Ok(parsed);
+        if paren_depth == 0 {
+            Some(idx);
         }
-        return Err(());
     }
+    None
 }
 
-impl fmt::Display for FormulaPart {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.children.len() > 0 {
-            let mut children_print = String::new();
-            for part in self.children.iter() {
-                children_print += part.to_string().as_str();
-            }
-            write!(
-                f,
-                "[{:#?} {}]: (\n\t{}\n)",
-                self.part_type, self.content, children_print
-            )
-        } else {
-            write!(f, "[{:#?} {}]", self.part_type, self.content)
-        }
-    }
-}
+pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
+    let mut parsed: Vec<Token> = Vec::new();
+    let mut func_close_parens: Vec<usize> = Vec::new();
 
-pub fn find_close_paren(text: &str, opening: usize) -> Result<usize, ()> {
-    let mut counter = 0;
-    for i in opening..text.len() {
-        let char = text.chars().nth(i).unwrap();
-        if char == '(' {
-            counter += 1;
-        }
-        if char == ')' {
-            counter -= 1;
-        }
-        if counter == 0 {
-            return Ok(i);
-        }
-    }
-    Err(())
-}
-
-pub fn naive_parse_string(text: &str, opening: usize) -> Result<usize, ()> {
-    // Does not yet account for escapes, which Excel may or may not even support.
-    for i in opening + 1..text.len() {
-        let char = text.chars().nth(i).unwrap();
-        if char == '"' {
-            return Ok(i);
-        }
-    }
-    Err(())
-}
-
-pub fn parse_formula(formula: &str) -> Result<Vec<FormulaPart>, ()> {
-    let mut parse_idx: usize = 0;
-    if formula.starts_with("=") {
-        parse_idx += 1;
-    }
-
-    let mut parsed: Vec<FormulaPart> = vec![];
-
+    let mut parse_idx = 0;
     while parse_idx < formula.len() {
-        let mut char = formula.chars().nth(parse_idx).unwrap();
-
-        // Function parsing
-        // All Excel function start with a letter...
-        if char.is_ascii_alphabetic() {
-            let function_start_idx = parse_idx; // Save this, so we can return to it if it's not a function.
-            let mut function_name = String::new();
-            // But they don't all contain only letters.
-            while (char.is_ascii_alphanumeric() || char == '.') && parse_idx < formula.len() {
-                char = formula.chars().nth(parse_idx).unwrap();
-                function_name += char.to_string().as_str();
-                parse_idx += 1;
-            }
-            if function_name.chars().last().unwrap() == '(' {
-                // Begin function content parsing
-                let close_paren = find_close_paren(formula, parse_idx - 1);
-                if close_paren.is_err() {
-                    return Err(());
-                }
-
-                let formula_slice = &formula[parse_idx..close_paren.unwrap()];
-                let mut split_paren_depth = 0;
-                let mut split_next_idx = 0;
-                let function_args: Vec<&str> = formula_slice
-                    .split(|c| {
-                        split_next_idx += 1;
-                        if c == '(' {
-                            split_paren_depth += 1;
-                        }
-                        if c == ')' {
-                            split_paren_depth -= 1;
-                        }
-                        let splitting = c == ','
-                            && formula_slice.chars().nth(split_next_idx).unwrap_or('1') == ' '
-                            && split_paren_depth == 0;
-                        return splitting;
-                    })
-                    .collect();
-
-                let mut function_args_parsed: Vec<FormulaPart> = vec![];
-                for fn_arg in function_args.iter() {
-                    let fn_arg_parsed = parse_formula(fn_arg);
-                    if fn_arg_parsed.is_err() {
-                        println!("Error on {}!", fn_arg);
-                        return Err(());
-                    }
-                    function_args_parsed.push(FormulaPart {
-                        part_type: FormulaPartType::FunctionArg,
-                        children: fn_arg_parsed.unwrap(),
-                        content: String::new(),
-                    })
-                }
-
-                parsed.push(FormulaPart {
-                    part_type: FormulaPartType::Function,
-                    children: function_args_parsed,
-                    content: function_name[..function_name.len() - 1].to_string(), // Remove the trailing parentheses
-                });
-
-                parse_idx = close_paren.unwrap();
-            } else {
-                parse_idx = function_start_idx;
-            }
-        }
-
-        // Whenever the parse_idx is forceibly changed (quite often), this needs to be run:
-        char = formula.chars().nth(parse_idx).unwrap();
-
-        // Plain parenthesis parsing
-        if char == '(' {
-            let close_paren = find_close_paren(formula, parse_idx);
-            if close_paren.is_err() {
-                return Err(());
-            }
-            let paren_parsed = parse_formula(&formula[parse_idx + 1..close_paren.unwrap()]);
-            if paren_parsed.is_err() {
-                return Err(());
-            }
-            parsed.push(FormulaPart {
-                part_type: FormulaPartType::Parent,
-                children: paren_parsed.unwrap(),
-                content: String::new(),
-            });
-            parse_idx = close_paren.unwrap();
-        }
-
-        // Whenever the parse_idx is forceibly changed (quite often), this needs to be run:
-        // char = formula.chars().nth(parse_idx).unwrap();
-
-        // Operator parsing
-        for &operator in OPERATORS.iter() {
-            if &formula[parse_idx..cmp::min(parse_idx + operator.len(), formula.len())] == operator
+        let current_char = formula.chars().nth(parse_idx).unwrap_or_default();
+        if current_char.is_ascii_digit() {
+            // Parse raw numbers
+            let mut number_content = String::new();
+            // Allow for multiple numerical characters to follow one another, as is usual
+            while formula
+                .chars()
+                .nth(parse_idx)
+                .unwrap_or_default()
+                .is_ascii_digit()
             {
-                parsed.push(FormulaPart {
-                    part_type: FormulaPartType::Operator,
-                    children: vec![],
-                    content: String::from(operator),
-                });
-                parse_idx = parse_idx + operator.len() - 1;
-            }
-        }
-
-        // Whenever the parse_idx is forceibly changed (quite often), this needs to be run:
-        char = formula.chars().nth(parse_idx).unwrap();
-
-        // Numbers
-        if char.is_ascii_digit() || char == '.' {
-            let mut digits = String::new();
-            // But they don't all contain only letters.
-            // digits += char.to_string().as_str();
-
-            while parse_idx < formula.len()
-                && (formula.chars().nth(parse_idx).unwrap().is_ascii_digit()
-                    || formula.chars().nth(parse_idx).unwrap() == '.')
-            {
-                char = formula.chars().nth(parse_idx).unwrap();
-                digits += char.to_string().as_str();
-                parse_idx += 1;
-            }
-
-            if digits.len() > 0 {
-                parsed.push(FormulaPart {
-                    part_type: FormulaPartType::Number,
-                    children: vec![],
-                    content: digits,
-                });
-                parse_idx -= 1;
-            }
-        }
-
-        // Strings
-        if char == '"' {
-            let ending = naive_parse_string(formula, parse_idx).unwrap_or(formula.len() - 1);
-            parsed.push(FormulaPart {
-                part_type: FormulaPartType::String,
-                children: vec![],
-                content: formula[parse_idx + 1..ending].to_string(),
-            });
-            parse_idx = ending;
-        }
-
-        // Booleans
-        if formula[parse_idx..cmp::min(parse_idx + "TRUE".len(), formula.len())]
-            .to_ascii_uppercase()
-            == "TRUE"
-        {
-            parse_idx = parse_idx + "TRUE".len();
-            parsed.push(FormulaPart {
-                part_type: FormulaPartType::Boolean,
-                children: vec![],
-                content: "TRUE".to_string(),
-            })
-        } else if formula[parse_idx..cmp::min(parse_idx + "FALSE".len(), formula.len())]
-            .to_ascii_uppercase()
-            == "FALSE"
-        {
-            parse_idx = parse_idx + "FALSE".len();
-            parsed.push(FormulaPart {
-                part_type: FormulaPartType::Boolean,
-                children: vec![],
-                content: "FALSE".to_string(),
-            })
-        }
-
-        // References
-        if char.is_ascii_alphabetic() {
-            let start_idx = parse_idx; // Store this, so we can come back to it if it's not a reference.
-            let mut reference = String::new();
-            // reference += char.to_string().as_str();
-
-            while parse_idx < formula.len()
-                && formula
+                number_content += formula
                     .chars()
                     .nth(parse_idx)
-                    .unwrap()
-                    .is_ascii_alphanumeric()
-            {
-                char = formula.chars().nth(parse_idx).unwrap();
-                reference += char.to_string().as_str();
+                    .unwrap_or_default()
+                    .to_string()
+                    .as_str();
                 parse_idx += 1;
             }
 
-            if reference.chars().last().unwrap_or(' ').is_ascii_digit() {
-                // All references should end with a number.
-                parse_idx -= 1;
+            parsed.push(Token {
+                token_type: TokenType::Number,
+                content: number_content,
+            });
+            parse_idx -= 1;
+        } else if OPERATORS.contains(&current_char.to_string().as_str()) {
+            // Parse operators
+            let next_char = formula.chars().nth(parse_idx).unwrap_or_default();
+            let extended_operator = current_char.to_string() + next_char.to_string().as_str();
 
-                parsed.push(FormulaPart {
-                    part_type: FormulaPartType::Reference,
-                    children: vec![],
-                    content: reference.to_ascii_uppercase(),
+            // Check if it's >=, <=, or <>
+            if OPERATORS.contains(&extended_operator.as_str()) {
+                parsed.push(Token {
+                    token_type: TokenType::Operator,
+                    content: extended_operator,
                 });
             } else {
-                // Not a reference, go back.
-                parse_idx = start_idx;
+                parsed.push(Token {
+                    token_type: TokenType::Operator,
+                    content: current_char.to_string(),
+                });
+            }
+        } else if current_char.is_ascii_alphabetic() {
+            // Parse functions
+            let mut function_name = String::new();
+            // Allow for multiple numerical characters to follow one another, as is usual
+            while formula
+                .chars()
+                .nth(parse_idx)
+                .unwrap_or_default()
+                .is_ascii_alphanumeric()
+            {
+                function_name += formula
+                    .chars()
+                    .nth(parse_idx)
+                    .unwrap_or_default()
+                    .to_string()
+                    .as_str();
+                parse_idx += 1;
+            }
+
+            // TODO: Again, chain if-let statements...
+            if let Some(func_open_paren) = formula.chars().nth(parse_idx) {
+                if func_open_paren == '(' {
+                    parsed.push(Token {
+                        token_type: TokenType::Function,
+                        content: function_name,
+                    });
+                    parsed.push(Token {
+                        token_type: TokenType::FuncLeftParen,
+                        content: String::new(),
+                    });
+                    if let Some(close_paren_idx) = find_close_paren(formula, parse_idx) {
+                        func_close_parens.push(close_paren_idx);
+                    }
+
+                    parse_idx -= 1;
+                } else {
+                    return Err(()); // Function doesn't have an opening parenthesis
+                }
+            } else {
+                return Err(()); // Function doesn't have an opening parenthesis
+            }
+        } else if current_char == '(' {
+            // Parse left parentheses
+            parsed.push(Token {
+                token_type: TokenType::LeftParen,
+                content: String::new(),
+            });
+        } else if current_char == ')' {
+            // Parse right parentheses
+            if func_close_parens.contains(&parse_idx) {
+                parsed.push(Token {
+                    token_type: TokenType::FuncRightParen,
+                    content: String::new(),
+                });
+            } else {
+                parsed.push(Token {
+                    token_type: TokenType::RightParen,
+                    content: String::new(),
+                });
             }
         }
 
         parse_idx += 1
     }
 
-    Ok(parsed)
+    for idx in 0..parsed.len() - 1 {
+        if parsed[idx].token_type == TokenType::Operator
+            && parsed[idx].content == "-"
+            && (idx == 0 || parsed[idx - 1].token_type != TokenType::Number)
+        // TODO: Number, or variable, or function
+        {
+            // Handle the special case of negation
+            // https://math.stackexchange.com/questions/217315
+            parsed[idx].content = String::from("-1");
+        }
+    }
+
+    return Ok(parsed);
 }
 
-fn apply_operator(a: f32, b: f32, operator: &str) -> f32 {
+fn get_operator_precedence(operator: &str) -> u8 {
+    // TODO: Add the rest of these from Excel's docs
+    match operator {
+        // Reference operators
+        ":" => 8,
+        "," => 8,
+        // Negation
+        "-1" => 7,
+        // Percent
+        "%" => 6,
+        // Exponentation
+        "^" => 5,
+        // Multiplication and division
+        "*" => 4,
+        "/" => 4,
+        // Addition and subtraction
+        "+" => 3,
+        "-" => 3,
+        // Concatenation
+        "&" => 2,
+        // Comparison
+        "=" => 1,
+        "<" => 1,
+        ">" => 1,
+        "<=" => 1,
+        ">=" => 1,
+        "<>" => 1,
+        _ => 0,
+    }
+}
+
+fn apply_arithmetic_operator(a: f32, b: f32, operator: &str) -> f32 {
     match operator {
         "+" => a + b,
         "-" => a - b,
@@ -306,76 +213,92 @@ fn apply_operator(a: f32, b: f32, operator: &str) -> f32 {
     }
 }
 
-#[derive(EnumIter)]
-enum OrderOpsState {
-    Reference,
-    Negation,
-    Percent,
-    Exponentiation,
-    Multiplication,
-    Addition,
-    Concatenation,
-    Comparison,
-}
-
 pub fn eval_formula(formula: &str) -> Result<String, ()> {
-    let mut evaluated_formula: Vec<FormulaPart> = vec![];
+    let parsed = parse_formula(formula).unwrap_or_default(); // TODO: Add some error checking
 
-    // for operation in OrderOpsState::iter() {
-    //     match operation {
-    //         OrderOpsState::Reference => {
-    //             todo!()
-    //         }
-    //         OrderOpsState::Negation => (),
-    //         OrderOpsState::Percent => (),
-    //         OrderOpsState::Exponentiation => (),
-    //         OrderOpsState::Multiplication => (),
-    //         OrderOpsState::Addition => (),
-    //         OrderOpsState::Concatenation => (),
-    //         OrderOpsState::Comparison => (),
-    //     }
-    // }
+    // TODO: Support for non-numbers
+    let mut output_queue: Vec<Token> = Vec::new();
+    let mut operator_stack: Vec<Token> = Vec::new();
 
-    if let Ok(mut parsed) = parse_formula(formula) {
-        let mut idx = 0;
-        while idx < parsed.len() {
-            let part = &parsed[idx];
-            match part.part_type {
-                FormulaPartType::Operator => {
-                    if idx == 0 || idx >= parsed.len() {
-                        return Err(());
-                    }
-
-                    let prev = evaluated_formula.last().unwrap();
-                    let next = parsed[idx + 1].clone();
-
-                    let last_idx = evaluated_formula.len() - 1;
-
-                    if prev.part_type != FormulaPartType::String && prev.part_type == next.part_type
-                    {
-                        // Logic for if they're the same (numbers and slices)
-                        if prev.part_type == FormulaPartType::Number {
-                            evaluated_formula[last_idx].content = apply_operator(
-                                prev.as_number().unwrap(),
-                                next.as_number().unwrap(),
-                                part.content.as_str(),
-                            )
-                            .to_string();
-                            idx += 1;
-                        }
-                    }
-                    {
-                        // Treat everything elsae like strings and concat away
-                    }
-                }
-                FormulaPartType::Number => {
-                    evaluated_formula.push(part.clone());
-                }
-                _ => (),
+    for token in parsed[1..].iter() {
+        // This is me skipping the = at the start
+        match token.token_type {
+            TokenType::LeftParen => {
+                operator_stack.push(token.clone());
             }
-            idx += 1;
+            TokenType::RightParen => {
+                // TODO: When if-let chains are implemented, make this an if-let expression
+                while let Some(x) = operator_stack.pop() {
+                    if x.token_type != TokenType::LeftParen {
+                        output_queue.push(x);
+                    } else {
+                        break;
+                    }
+                }
+            }
+            TokenType::Operator => {
+                let current_precedence = get_operator_precedence(token.content.as_str());
+                println!("{}", current_precedence);
+
+                // Okay to use unwrap_or here because any empty string will have a precedence of 1
+                while get_operator_precedence(
+                    &operator_stack
+                        .last()
+                        .unwrap_or(&Token::default())
+                        .content
+                        .as_str(),
+                ) >= current_precedence
+                {
+                    if let Some(popped) = operator_stack.pop() {
+                        output_queue.push(popped);
+                    }
+                }
+
+                operator_stack.push(token.clone());
+            }
+            TokenType::Number => {
+                output_queue.push(token.clone());
+            }
         }
     }
 
-    Ok(evaluated_formula[0].content.clone())
+    while operator_stack.len() > 0 {
+        if let Some(popped) = operator_stack.pop() {
+            output_queue.push(popped);
+        }
+    }
+
+    let mut eval_stack: Vec<f32> = Vec::new();
+    for token in output_queue.iter() {
+        match token.token_type {
+            TokenType::Operator => {
+                // TODO: Add support for non-arithmetic operators
+                let operator = token.content.as_str();
+                let a = eval_stack.pop().unwrap();
+                match operator {
+                    "-1" => {
+                        eval_stack.push(-a);
+                    }
+                    _ => {
+                        let b = eval_stack.pop().unwrap();
+
+                        eval_stack.push(apply_arithmetic_operator(b, a, operator));
+                    }
+                }
+            }
+            TokenType::Number => {
+                eval_stack.push(token.content.parse().unwrap()); // TODO: Evil unwrap
+            }
+            _ => {
+                // Ignore things like parentheses, which will no longer be with us.
+            }
+        }
+    }
+
+    println!(
+        "Output: {:?}\nOperator: {:?}\nEval: {:?}",
+        output_queue, operator_stack, eval_stack
+    );
+
+    Ok(String::new())
 }
