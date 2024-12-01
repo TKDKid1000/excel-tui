@@ -31,11 +31,11 @@ fn main() -> Result<()> {
     // formulas::parse_formula("=SUM(--(COUNTIF(D5:D12,B5:B16, False)>=0))+\"Hello there\"+1+(A5:b26)")
     //     .unwrap();
     // let formula = "=-3+-4*(2+(-2+3)*4)/5";
-    let formula = "=SQRT(2)+sqrt(2)";
-    println!("Parsed values:");
-    for part in parse_formula(formula).iter() {
-        println!("{:?}", part)
-    }
+    let formula = "=sqrt(-1)";
+    // println!("Parsed values:");
+    // for part in parse_formula(formula).iter() {
+    //     println!("{:?}", part)
+    // }
 
     println!("{}", eval_formula(formula).unwrap());
     Ok(())

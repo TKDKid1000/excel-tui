@@ -29,6 +29,7 @@ pub enum TokenType {
 pub struct Token {
     pub token_type: TokenType,
     pub content: String,
+    pub function_n_args: Option<u8>,
 }
 
 pub fn find_close_paren(formula: &str, start_idx: usize) -> Option<usize> {
@@ -75,6 +76,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
             parsed.push(Token {
                 token_type: TokenType::Number,
                 content: number_content,
+                function_n_args: None,
             });
             parse_idx -= 1;
         } else if OPERATORS.contains(&current_char.to_string().as_str()) {
@@ -87,11 +89,13 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                 parsed.push(Token {
                     token_type: TokenType::Operator,
                     content: extended_operator,
+                    function_n_args: None,
                 });
             } else {
                 parsed.push(Token {
                     token_type: TokenType::Operator,
                     content: current_char.to_string(),
+                    function_n_args: None,
                 });
             }
         } else if current_char.is_ascii_alphabetic() {
@@ -119,6 +123,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                     parsed.push(Token {
                         token_type: TokenType::Function,
                         content: function_name.to_uppercase(),
+                        function_n_args: None,
                     });
                     if let Some(close_paren_idx) = find_close_paren(formula, parse_idx) {
                         func_close_parens.push(close_paren_idx);
@@ -136,6 +141,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
             parsed.push(Token {
                 token_type: TokenType::LeftParen,
                 content: String::new(),
+                function_n_args: None,
             });
         } else if current_char == ')' {
             // Parse right parentheses
@@ -143,11 +149,13 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                 parsed.push(Token {
                     token_type: TokenType::FuncClose,
                     content: String::new(),
+                    function_n_args: None,
                 });
             } else {
                 parsed.push(Token {
                     token_type: TokenType::RightParen,
                     content: String::new(),
+                    function_n_args: None,
                 });
             }
         }
@@ -175,6 +183,39 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
             {
                 parsed[idx].token_type = TokenType::FuncArgSep
             }
+        }
+    }
+
+    // Set function_n_args parameter for functions
+    for idx in 0..parsed.len() {
+        if parsed[idx].token_type == TokenType::Function {
+            let mut function_depth = 0;
+            let mut args = 1;
+
+            for function_idx in idx..parsed.len() {
+                if parsed[function_idx].token_type == TokenType::Function {
+                    function_depth += 1;
+                }
+                if parsed[function_idx].token_type == TokenType::FuncClose {
+                    function_depth -= 1;
+                }
+
+                if function_depth == 0 && function_idx == idx + 1 {
+                    // Special case where the function opens and immediately closes.
+                    args = 0;
+                    break;
+                }
+                if function_depth == 0 {
+                    break;
+                }
+
+                if function_depth == 1 && parsed[function_idx].token_type == TokenType::FuncArgSep {
+                    // Reached a comma, and it's in the root function, not a nested one.
+                    args += 1;
+                }
+            }
+
+            parsed[idx].function_n_args = Some(args);
         }
     }
 
@@ -241,7 +282,6 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                     if x.token_type != TokenType::LeftParen || x.token_type != TokenType::Function {
                         output_queue.push(x);
                     } else {
-                        println!("Breaking out");
                         break;
                     }
                 }
@@ -250,16 +290,17 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                 operator_stack.push(token.clone());
             }
             TokenType::FuncClose => {
-                while let Some(x) = operator_stack.pop() {
-                    if x.token_type != TokenType::LeftParen
-                        || x.token_type != TokenType::Function
-                        || x.token_type != TokenType::FuncArgSep
-                    {
-                        output_queue.push(x);
-                    } else {
-                        break;
-                    }
-                }
+                output_queue.push(operator_stack.pop().unwrap());
+                // while let Some(x) = operator_stack.pop() {
+                //     if x.token_type != TokenType::LeftParen
+                //         || x.token_type != TokenType::Function
+                //         || x.token_type != TokenType::FuncArgSep
+                //     {
+                //         output_queue.push(x);
+                //     } else {
+                //         break;
+                //     }
+                // }
             }
             TokenType::FuncArgSep => {
                 // while let Some(x) = operator_stack.pop() {
@@ -278,7 +319,6 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
             }
             TokenType::Operator => {
                 let current_precedence = get_operator_precedence(token.content.as_str());
-                println!("{}", current_precedence);
 
                 // Okay to use unwrap_or here because any empty string will have a precedence of 1
                 while get_operator_precedence(
@@ -300,6 +340,14 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                 output_queue.push(token.clone());
             }
         }
+        println!(
+            "RPN: {:?}",
+            output_queue
+                .clone()
+                .iter()
+                .map(|t| &t.content)
+                .collect::<Vec<&String>>()
+        );
     }
 
     while operator_stack.len() > 0 {
@@ -308,10 +356,11 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
         }
     }
 
-    println!("Output Queue: {:?}", output_queue);
+    // println!("Output Queue: {:?}", output_queue);
 
     let mut eval_stack: Vec<f32> = Vec::new();
     for token in output_queue.iter() {
+        println!("Eval Stack: {:?}", eval_stack);
         match token.token_type {
             TokenType::Operator => {
                 // TODO: Add support for non-arithmetic operators
@@ -331,9 +380,11 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
             TokenType::Function => {
                 if let Some(func) = get_func(&token.content) {
                     // println!("Eval stack at {}: {:?}", &token.content, eval_stack)
-                    let args = eval_stack.clone();
+                    let mut args = Vec::new();
+                    for _ in 0..token.function_n_args.unwrap() {
+                        args.push(eval_stack.pop().unwrap());
+                    }
                     if let Ok(result) = func.call(args.as_slice()) {
-                        eval_stack.drain(..);
                         eval_stack.extend(result);
                     }
                 } else {
