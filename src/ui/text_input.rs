@@ -1,8 +1,10 @@
+use std::cmp::min;
+
 use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     layout::{Alignment, Position},
-    style::Style,
-    text::{Line, Text},
+    style::{Style, Stylize},
+    text::{Line, Span, Text},
     widgets::{Paragraph, Widget},
     Frame,
 };
@@ -15,12 +17,17 @@ pub struct TextInput {
 }
 
 impl TextInput {
-    pub fn new(value: String, selection: [usize; 2]) -> Self {
-        Self { value, selection }
-    }
+    pub fn render(&self) -> Line {
+        if self.selection[0] == self.selection[1] {
+            return Line::from(self.value.clone()).reset_style();
+        }
 
-    pub fn render(&self) -> Paragraph {
-        return Paragraph::new(self.value.clone());
+        let before_sel = Span::from(self.value[..self.sel_min()].to_string());
+        let sel =
+            Span::from(self.value[self.sel_min()..self.sel_max()].to_string()).on_light_blue();
+        let after_sel = Span::from(self.value[self.sel_max()..].to_string());
+
+        return Line::from(vec![before_sel, sel, after_sel]);
     }
 
     pub fn handle_event(&mut self, event: &Event) {
@@ -31,17 +38,24 @@ impl TextInput {
                         if self.selection[1] < self.value.len() {
                             self.selection[1] += 1;
                         }
-                        self.selection[0] = self.selection[1]
+                        if !key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                            self.selection[0] = self.selection[1]
+                        }
                     }
                     KeyCode::Left => {
                         if self.selection[1] > 0 {
                             self.selection[1] -= 1;
                         }
-                        self.selection[0] = self.selection[1]
+                        if !key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                            self.selection[0] = self.selection[1]
+                        }
                     }
                     KeyCode::Backspace => {
                         if self.selection[0] != self.selection[1] {
                             // Delete the selected text
+                            self.value = self.value[..self.sel_min()].to_string()
+                                + &self.value[self.sel_max()..];
+                            self.set_cursor(self.sel_min());
                         } else {
                             // Delete the character before the cursor
                             self.value = self
@@ -59,15 +73,23 @@ impl TextInput {
                     }
                     KeyCode::Char(c) => {
                         if self.selection[0] != self.selection[1] {
-                            todo!()
-                        } else {
-                            self.value.insert(self.selection[1], c);
-                            self.set_cursor(self.selection[1] + 1);
+                            self.value = self.value[..self.sel_min()].to_string()
+                                + &self.value[self.sel_max()..];
+                            self.set_cursor(self.sel_min());
                         }
+                        self.value.insert(self.selection[1], c);
+                        self.set_cursor(self.selection[1] + 1);
                     }
                     _ => (),
                 }
             }
+            Event::Mouse(mouse_event) => match mouse_event.kind {
+                event::MouseEventKind::Down(_) => {
+                    // TODO: Handle other mouse buttons, if they even do anything.
+                    
+                }
+                _ => (),
+            },
             _ => (),
         }
     }
@@ -87,5 +109,13 @@ impl TextInput {
     pub fn set_cursor(&mut self, x: usize) {
         self.selection[0] = x;
         self.selection[1] = x;
+    }
+
+    fn sel_min(&self) -> usize {
+        *self.selection.iter().min().unwrap()
+    }
+
+    fn sel_max(&self) -> usize {
+        *self.selection.iter().max().unwrap()
     }
 }

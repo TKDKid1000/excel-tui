@@ -2,8 +2,9 @@ use std::process::id;
 
 use crate::formula_functions::get_func;
 
-const OPERATORS: [&'static str; 18] = [
+const OPERATORS: [&'static str; 19] = [
     "-", "%", "^", "^", "*", "/", "+", "&", "=", ">=", "<=", "<>", "<", ">", "@", "#", ":", ",",
+    " ",
 ];
 
 #[derive(Debug, PartialEq, Clone, Default)]
@@ -19,7 +20,7 @@ pub enum TokenType {
     // figure it out.
     Number,
     // String,
-    // Boolean,
+    Boolean, // TODO: Also implement this (only added for IF command)
     Operator,
     LeftParen,
     RightParen,
@@ -30,6 +31,22 @@ pub struct Token {
     pub token_type: TokenType,
     pub content: String,
     pub function_n_args: Option<u8>,
+}
+
+impl Token {
+    pub fn as_f32(&self) -> f32 {
+        match self.token_type {
+            TokenType::Number => self.content.parse::<f32>().unwrap(),
+            TokenType::Boolean => {
+                if self.content == String::from("TRUE") {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            _ => 0.0,
+        }
+    }
 }
 
 pub fn find_close_paren(formula: &str, start_idx: usize) -> Option<usize> {
@@ -81,7 +98,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
             parse_idx -= 1;
         } else if OPERATORS.contains(&current_char.to_string().as_str()) {
             // Parse operators
-            let next_char = formula.chars().nth(parse_idx).unwrap_or_default();
+            let next_char = formula.chars().nth(parse_idx + 1).unwrap_or_default();
             let extended_operator = current_char.to_string() + next_char.to_string().as_str();
 
             // Check if it's >=, <=, or <>
@@ -91,6 +108,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                     content: extended_operator,
                     function_n_args: None,
                 });
+                parse_idx += 1 // Increment parse index because we consumed the next char
             } else {
                 parsed.push(Token {
                     token_type: TokenType::Operator,
@@ -163,7 +181,8 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
         parse_idx += 1
     }
 
-    // Handle special cases of dual-meaning operators (- and ,)
+    // Handle special cases of dual-meaning operators ("-" and "," and " ")
+    let mut to_remove: Vec<usize> = Vec::new();
     for idx in 0..parsed.len() - 1 {
         if parsed[idx].token_type == TokenType::Operator
             && parsed[idx].content == "-"
@@ -182,6 +201,15 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                 && parsed[idx + 1].token_type == TokenType::Reference)
             {
                 parsed[idx].token_type = TokenType::FuncArgSep
+            }
+        } else if parsed[idx].token_type == TokenType::Operator && parsed[idx].content == " " {
+            if idx == 0 {
+                to_remove.push(idx);
+            }
+            if !(parsed[idx - 1].token_type == TokenType::Reference
+                && parsed[idx + 1].token_type == TokenType::Reference)
+            {
+                to_remove.push(idx);
             }
         }
     }
@@ -259,7 +287,20 @@ fn apply_arithmetic_operator(a: f32, b: f32, operator: &str) -> f32 {
         "-" => a - b,
         "*" => a * b,
         "/" => a / b,
+        "^" => a.powf(b),
         _ => a,
+    }
+}
+
+fn apply_comparison_operator(a: f32, b: f32, operator: &str) -> bool {
+    match operator {
+        "=" => a == b,
+        "<" => a < b,
+        ">" => a > b,
+        "<=" => a <= b,
+        ">=" => a >= b,
+        "<>" => a != b,
+        _ => false,
     }
 }
 
@@ -269,6 +310,7 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
     // TODO: Support for non-numbers
     let mut output_queue: Vec<Token> = Vec::new();
     let mut operator_stack: Vec<Token> = Vec::new();
+    let mut function_stack: Vec<Token> = Vec::new();
 
     for token in parsed[1..].iter() {
         // This is me skipping the = at the start
@@ -287,10 +329,10 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                 }
             }
             TokenType::Function => {
-                operator_stack.push(token.clone());
+                function_stack.push(token.clone());
             }
             TokenType::FuncClose => {
-                output_queue.push(operator_stack.pop().unwrap());
+                output_queue.push(function_stack.pop().unwrap());
                 // while let Some(x) = operator_stack.pop() {
                 //     if x.token_type != TokenType::LeftParen
                 //         || x.token_type != TokenType::Function
@@ -303,18 +345,21 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                 // }
             }
             TokenType::FuncArgSep => {
-                // while let Some(x) = operator_stack.pop() {
-                //     if x.token_type != TokenType::LeftParen
-                //         || x.token_type != TokenType::Function
-                //         || x.token_type != TokenType::FuncArgSep
-                //     {
-                //         output_queue.push(x);
-                //     } else {
-                //         break;
-                //     }
-                // }
+                while let Some(x) = operator_stack.pop() {
+                    if x.token_type != TokenType::LeftParen
+                        || x.token_type != TokenType::Function
+                        || x.token_type != TokenType::FuncArgSep
+                    {
+                        output_queue.push(x);
+                    } else {
+                        break;
+                    }
+                }
             }
             TokenType::Reference => {
+                todo!()
+            }
+            TokenType::Boolean => {
                 todo!()
             }
             TokenType::Operator => {
@@ -340,27 +385,35 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                 output_queue.push(token.clone());
             }
         }
-        println!(
-            "RPN: {:?}",
-            output_queue
-                .clone()
-                .iter()
-                .map(|t| &t.content)
-                .collect::<Vec<&String>>()
-        );
+        // println!(
+        //     "RPN: {:?}",
+        //     output_queue
+        //         .clone()
+        //         .iter()
+        //         .map(|t| &t.content)
+        //         .collect::<Vec<&String>>()
+        // );
     }
 
     while operator_stack.len() > 0 {
         if let Some(popped) = operator_stack.pop() {
             output_queue.push(popped);
         }
+        // println!(
+        //     "RPN: {:?}",
+        //     output_queue
+        //         .clone()
+        //         .iter()
+        //         .map(|t| &t.content)
+        //         .collect::<Vec<&String>>()
+        // );
     }
 
     // println!("Output Queue: {:?}", output_queue);
 
-    let mut eval_stack: Vec<f32> = Vec::new();
+    let mut eval_stack: Vec<Token> = Vec::new();
     for token in output_queue.iter() {
-        println!("Eval Stack: {:?}", eval_stack);
+        // println!("Eval Stack: {:?}", eval_stack);
         match token.token_type {
             TokenType::Operator => {
                 // TODO: Add support for non-arithmetic operators
@@ -368,13 +421,41 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                 let a = eval_stack.pop().unwrap();
                 match operator {
                     "-1" => {
-                        eval_stack.push(-a);
+                        eval_stack.push(Token {
+                            token_type: TokenType::Number,
+                            content: (-a.as_f32()).to_string(),
+                            function_n_args: None,
+                        });
                     }
-                    _ => {
+                    "%" => {
+                        eval_stack.push(Token {
+                            token_type: TokenType::Number,
+                            content: (a.as_f32() / 100.).to_string(),
+                            function_n_args: None,
+                        });
+                    }
+                    "+" | "-" | "*" | "/" | "^" => {
                         let b = eval_stack.pop().unwrap();
 
-                        eval_stack.push(apply_arithmetic_operator(b, a, operator));
+                        eval_stack.push(Token {
+                            token_type: TokenType::Number,
+                            content: apply_arithmetic_operator(b.as_f32(), a.as_f32(), operator)
+                                .to_string(),
+                            function_n_args: None,
+                        });
                     }
+                    "=" | "<" | ">" | "<=" | ">=" | "<>" => {
+                        let b: Token = eval_stack.pop().unwrap();
+
+                        eval_stack.push(Token {
+                            token_type: TokenType::Boolean,
+                            content: apply_comparison_operator(b.as_f32(), a.as_f32(), operator)
+                                .to_string()
+                                .to_uppercase(),
+                            function_n_args: None,
+                        });
+                    }
+                    _ => {}
                 }
             }
             TokenType::Function => {
@@ -384,7 +465,9 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                     for _ in 0..token.function_n_args.unwrap() {
                         args.push(eval_stack.pop().unwrap());
                     }
+                    args.reverse(); // Makes writing the functions a hell of a lot easier
                     if let Ok(result) = func.call(args.as_slice()) {
+                        // println!("Result of function {}: {:?}", token.content, result);
                         eval_stack.extend(result);
                     }
                 } else {
@@ -392,7 +475,7 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                 }
             }
             TokenType::Number => {
-                eval_stack.push(token.content.parse().unwrap()); // TODO: Evil unwrap
+                eval_stack.push(token.clone()); // TODO: Evil unwrap
             }
             _ => {
                 // Ignore things like parentheses, which will no longer be with us.
@@ -400,7 +483,7 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
         }
     }
 
-    println!("Eval: {:?}", eval_stack);
+    // println!("Eval: {:?}", eval_stack);
 
-    Ok(String::new())
+    Ok(eval_stack.first().unwrap().content.to_string()) // TODO: Don't return just a String
 }

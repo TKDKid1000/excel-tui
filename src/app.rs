@@ -7,7 +7,7 @@ use ratatui::{
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     },
-    layout::{Offset, Position},
+    layout::{Constraint, Direction, Layout, Offset, Position},
     widgets::ScrollbarState,
     Frame, Terminal,
 };
@@ -74,12 +74,18 @@ impl App {
         } else {
             self.editor
                 .set_value(self.spreadsheet.get_cell(&self.active_cell).to_string());
+            // Needed so that cursor position doesn't persist and show text selection when unfocused.
+            self.editor.set_cursor(0);
         }
 
-        frame.render_widget(self.editor.render(), frame.area());
+        let main_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![Constraint::Length(1), Constraint::Fill(1)]).split(frame.area());
+
+        frame.render_widget(self.editor.render(), main_layout[0]);
         frame.render_widget(
             infinite_table(&self.spreadsheet, &self.active_cell, &self.focused_area),
-            frame.area().offset(Offset { x: 0, y: 1 }),
+            main_layout[1]
         );
     }
 
