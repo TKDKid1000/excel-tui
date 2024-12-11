@@ -1,5 +1,3 @@
-use std::process::id;
-
 use crate::formula_functions::get_func;
 
 const OPERATORS: [&'static str; 19] = [
@@ -14,13 +12,11 @@ pub enum TokenType {
     Function,
     FuncClose,
     FuncArgSep, // aka a comma
-    // FunctionArg,
-    Reference, // TODO: Implement this (it's only uncommented for FuncArgSep logic)
-    #[default] // I don't know if this is temporary or the actual default, but I'm too tired to
-    // figure it out.
+    Reference,  // TODO: Implement this (it's only uncommented for FuncArgSep logic)
     Number,
-    // String,
-    Boolean, // TODO: Also implement this (only added for IF command)
+    #[default] // String is definitely the default
+    String,
+    Boolean,
     Operator,
     LeftParen,
     RightParen,
@@ -174,7 +170,6 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
             // Parse right parentheses
 
             if func_close_parens.contains(&parse_idx) {
-                println!("Func Close: {current_char}");
                 parsed.push(Token {
                     token_type: TokenType::FuncClose,
                     content: String::new(),
@@ -187,6 +182,25 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                     function_n_args: None,
                 });
             }
+        } else if current_char == '"' {
+            let mut string_value = String::new();
+
+            // TODO: if-while (if-let for searchability) chaining... man I need this
+            parse_idx += 1;
+            while let Some(char) = formula.chars().nth(parse_idx) {
+                // TODO: Alter this condition to allow Excel's frankly weird "" escaping
+                if char == '"' {
+                    break;
+                }
+                string_value += &char.to_string();
+                parse_idx += 1;
+            }
+
+            parsed.push(Token {
+                token_type: TokenType::String,
+                content: string_value,
+                function_n_args: None,
+            });
         }
 
         parse_idx += 1
@@ -274,6 +288,7 @@ fn get_operator_precedence(operator: &str) -> u8 {
         // Reference operators
         ":" => 8,
         "," => 8,
+        " " => 8,
         // Negation
         "-1" => 7,
         // Percent
@@ -396,10 +411,7 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
 
                 operator_stack.push(token.clone());
             }
-            TokenType::Boolean => {
-                output_queue.push(token.clone());
-            }
-            TokenType::Number => {
+            TokenType::String | TokenType::Boolean | TokenType::Number => {
                 output_queue.push(token.clone());
             }
         }
@@ -427,11 +439,23 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
         // );
     }
 
-    // println!("Output Queue: {:?}", output_queue);
+    // println!(
+    //     "Output Queue: {:?}",
+    //     output_queue
+    //         .iter()
+    //         .map(|t| &t.content)
+    //         .collect::<Vec<&String>>()
+    // );
 
     let mut eval_stack: Vec<Token> = Vec::new();
     for token in output_queue.iter() {
-        // println!("Eval Stack: {:?}", eval_stack);
+        // println!(
+        //     "Eval Stack: {:?}",
+        //     eval_stack
+        //         .iter()
+        //         .map(|t| &t.content)
+        //         .collect::<Vec<&String>>()
+        // );
         match token.token_type {
             TokenType::Operator => {
                 // TODO: Add support for non-arithmetic operators
@@ -462,6 +486,28 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                             function_n_args: None,
                         });
                     }
+                    "&" => {
+                        let b = eval_stack.pop().unwrap();
+
+                        let mut concatenated = b.content + a.content.as_str();
+
+                        // Determine type of concatenated variable (it may be a string, number, or boolean)
+                        let mut concatenated_type = TokenType::String;
+                        if concatenated.parse::<f32>().is_ok() {
+                            concatenated_type = TokenType::Number
+                        } else if concatenated.to_uppercase() == "TRUE"
+                            || concatenated.to_uppercase() == "FALSE"
+                        {
+                            concatenated_type = TokenType::Boolean;
+                            concatenated = concatenated.to_uppercase();
+                        }
+
+                        eval_stack.push(Token {
+                            token_type: concatenated_type,
+                            content: concatenated,
+                            function_n_args: None,
+                        });
+                    }
                     "=" | "<" | ">" | "<=" | ">=" | "<>" => {
                         let b: Token = eval_stack.pop().unwrap();
 
@@ -484,7 +530,6 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                         args.push(eval_stack.pop().unwrap());
                     }
                     args.reverse(); // Makes writing the functions a hell of a lot easier
-                    println!("Args {:?}", args);
                     if let Ok(result) = func.call(args.as_slice()) {
                         // println!("Result of function {}: {:?}", token.content, result);
                         eval_stack.extend(result);
@@ -493,10 +538,7 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                     return Err(());
                 }
             }
-            TokenType::Number => {
-                eval_stack.push(token.clone());
-            }
-            TokenType::Boolean => {
+            TokenType::String | TokenType::Boolean | TokenType::Number => {
                 eval_stack.push(token.clone());
             }
             _ => {
@@ -504,8 +546,6 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
             }
         }
     }
-
-    // println!("Eval: {:?}", eval_stack);
 
     Ok(eval_stack.first().unwrap().content.to_string()) // TODO: Don't return just a String
 }
