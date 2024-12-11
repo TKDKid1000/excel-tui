@@ -117,8 +117,9 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                 });
             }
         } else if current_char.is_ascii_alphabetic() {
-            // Parse functions
-            let mut function_name = String::new();
+            // Parse functions, booleans, and (some) cell references.
+
+            let mut textual_content = String::new();
             // Allow for multiple numerical characters to follow one another, as is usual
             while formula
                 .chars()
@@ -126,7 +127,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                 .unwrap_or_default()
                 .is_ascii_alphanumeric()
             {
-                function_name += formula
+                textual_content += formula
                     .chars()
                     .nth(parse_idx)
                     .unwrap_or_default()
@@ -135,12 +136,21 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                 parse_idx += 1;
             }
 
-            // TODO: Again, chain if-let statements...
-            if let Some(func_open_paren) = formula.chars().nth(parse_idx) {
+            if textual_content.to_uppercase() == "TRUE" || textual_content.to_uppercase() == "FALSE"
+            {
+                parsed.push(Token {
+                    token_type: TokenType::Boolean,
+                    content: textual_content.to_uppercase(),
+                    function_n_args: None,
+                });
+                // Decrement parse index because it went over by one in the while loop.
+                parse_idx -= 1
+            } else if let Some(func_open_paren) = formula.chars().nth(parse_idx) {
+                // TODO: Again, chain if-let statements...
                 if func_open_paren == '(' {
                     parsed.push(Token {
                         token_type: TokenType::Function,
-                        content: function_name.to_uppercase(),
+                        content: textual_content.to_uppercase(),
                         function_n_args: None,
                     });
                     if let Some(close_paren_idx) = find_close_paren(formula, parse_idx) {
@@ -151,11 +161,10 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                 } else {
                     return Err(()); // Function doesn't have an opening parenthesis
                 }
-            } else {
-                return Err(()); // Function doesn't have an opening parenthesis
             }
         } else if current_char == '(' {
             // Parse left parentheses
+
             parsed.push(Token {
                 token_type: TokenType::LeftParen,
                 content: String::new(),
@@ -163,7 +172,9 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
             });
         } else if current_char == ')' {
             // Parse right parentheses
+
             if func_close_parens.contains(&parse_idx) {
+                println!("Func Close: {current_char}");
                 parsed.push(Token {
                     token_type: TokenType::FuncClose,
                     content: String::new(),
@@ -211,6 +222,13 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
             {
                 to_remove.push(idx);
             }
+        }
+    }
+
+    // Remove "to remove" elements
+    for idx in (0..parsed.len()).rev() {
+        if to_remove.contains(&idx) {
+            parsed.remove(idx);
         }
     }
 
@@ -359,9 +377,6 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
             TokenType::Reference => {
                 todo!()
             }
-            TokenType::Boolean => {
-                todo!()
-            }
             TokenType::Operator => {
                 let current_precedence = get_operator_precedence(token.content.as_str());
 
@@ -380,6 +395,9 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                 }
 
                 operator_stack.push(token.clone());
+            }
+            TokenType::Boolean => {
+                output_queue.push(token.clone());
             }
             TokenType::Number => {
                 output_queue.push(token.clone());
@@ -466,6 +484,7 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                         args.push(eval_stack.pop().unwrap());
                     }
                     args.reverse(); // Makes writing the functions a hell of a lot easier
+                    println!("Args {:?}", args);
                     if let Ok(result) = func.call(args.as_slice()) {
                         // println!("Result of function {}: {:?}", token.content, result);
                         eval_stack.extend(result);
@@ -475,7 +494,10 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                 }
             }
             TokenType::Number => {
-                eval_stack.push(token.clone()); // TODO: Evil unwrap
+                eval_stack.push(token.clone());
+            }
+            TokenType::Boolean => {
+                eval_stack.push(token.clone());
             }
             _ => {
                 // Ignore things like parentheses, which will no longer be with us.
