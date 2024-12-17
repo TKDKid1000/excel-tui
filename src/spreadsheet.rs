@@ -1,5 +1,7 @@
 use std::fs;
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, ErrorKind};
+
+use crate::formulas::{eval_formula, Token};
 
 #[derive(Debug)]
 pub struct SpreadsheetRowIteratorItem {
@@ -55,7 +57,7 @@ impl Spreadsheet {
 
     // pub fn load_rows(&mut self, lower: i32, upper: i32) {}
 
-    pub fn from_csv(path: &str) -> Result<Spreadsheet> {
+    pub fn from_csv(path: &str) -> Result<Spreadsheet, Error> {
         let contents = match fs::read_to_string(path) {
             Ok(c) => c,
             Err(_) => return Err(Error::new(ErrorKind::NotFound, "File not found")),
@@ -88,8 +90,17 @@ impl Spreadsheet {
         self.data.iter().clone()
     }
 
-    pub fn get_cell(&mut self, cell: &SpreadsheetCell) -> &str {
-        self.resize_to_cell(cell);
+    fn in_spreadsheet(&self, cell: &SpreadsheetCell) -> bool {
+        cell.row < self.data.len()
+            && cell.col < self.data[cell.row].contents.len()
+            && self.col_widths.len() > cell.col
+    }
+
+    pub fn get_cell(&self, cell: &SpreadsheetCell) -> &str {
+        if !self.in_spreadsheet(cell) {
+            return "";
+        }
+        // self.resize_to_cell(cell);
         return self.data[cell.row].contents[cell.col].as_str();
     }
 
@@ -123,6 +134,11 @@ impl Spreadsheet {
         if self.col_widths.len() > cell.col {
             self.col_widths[cell.col] = width;
         }
+    }
+
+    // TODO: Make it a Vec<Token> once functions with multiple outputs are implemented
+    pub fn get_cell_value(&self, cell: &SpreadsheetCell) -> Result<Token, ()> {
+        return eval_formula(self.get_cell(cell), &self);
     }
 }
 
