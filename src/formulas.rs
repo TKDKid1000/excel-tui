@@ -372,13 +372,16 @@ fn apply_reference_operator(
     a: BTreeSet<Reference>,
     b: BTreeSet<Reference>,
     operator: &str,
-) -> Vec<Reference> {
-    match operator {
-        ":" => a.first().unwrap().range(b.first().unwrap()),
-        "," => a.union(&b).cloned().collect::<Vec<Reference>>(),
-        " " => a.intersection(&b).cloned().collect::<Vec<Reference>>(),
-        _ => a.iter().cloned().collect::<Vec<Reference>>(),
-    }
+) -> BTreeSet<Reference> {
+    BTreeSet::from_iter(
+        match operator {
+            ":" => a.first().unwrap().range(b.first().unwrap()),
+            "," => a.union(&b).cloned().collect::<Vec<Reference>>(),
+            " " => a.intersection(&b).cloned().collect::<Vec<Reference>>(),
+            _ => a.iter().cloned().collect::<Vec<Reference>>(),
+        }
+        .into_iter(),
+    )
 }
 
 pub fn cell_to_token(cell_value: &str, spreadsheet: &Spreadsheet) -> Result<Token, ()> {
@@ -423,17 +426,17 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
                 function_stack.push(token.clone());
             }
             TokenType::FuncClose => {
+                while let Some(x) = operator_stack.pop() {
+                    if x.token_type != TokenType::LeftParen
+                        || x.token_type != TokenType::Function
+                        || x.token_type != TokenType::FuncArgSep
+                    {
+                        output_queue.push(x);
+                    } else {
+                        break;
+                    }
+                }
                 output_queue.push(function_stack.pop().unwrap());
-                // while let Some(x) = operator_stack.pop() {
-                //     if x.token_type != TokenType::LeftParen
-                //         || x.token_type != TokenType::Function
-                //         || x.token_type != TokenType::FuncArgSep
-                //     {
-                //         output_queue.push(x);
-                //     } else {
-                //         break;
-                //     }
-                // }
             }
             TokenType::FuncArgSep => {
                 while let Some(x) = operator_stack.pop() {
@@ -470,47 +473,24 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
                 output_queue.push(token.clone());
             }
         }
-        // println!(
-        //     "RPN: {:?}",
-        //     output_queue
-        //         .clone()
-        //         .iter()
-        //         .map(|t| &t.content)
-        //         .collect::<Vec<&String>>()
-        // );
     }
 
     while operator_stack.len() > 0 {
         if let Some(popped) = operator_stack.pop() {
             output_queue.push(popped);
         }
-        // println!(
-        //     "RPN: {:?}",
-        //     output_queue
-        //         .clone()
-        //         .iter()
-        //         .map(|t| &t.content)
-        //         .collect::<Vec<&String>>()
-        // );
     }
 
-    // println!(
-    //     "Output Queue: {:?}",
-    //     output_queue
-    //         .iter()
-    //         .map(|t| &t.content)
-    //         .collect::<Vec<&String>>()
-    // );
+    println!(
+        "Output Queue: {:?}",
+        output_queue
+            .iter()
+            .map(|t| t.token_type.clone())
+            .collect::<Vec<TokenType>>()
+    );
 
     let mut eval_stack: Vec<Token> = Vec::new();
     for token in output_queue.iter() {
-        // println!(
-        //     "Eval Stack: {:?}",
-        //     eval_stack
-        //         .iter()
-        //         .map(|t| &t.content)
-        //         .collect::<Vec<&String>>()
-        // );
         match token.token_type {
             TokenType::Operator => {
                 // TODO: Add support for non-arithmetic operators
@@ -518,10 +498,19 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
                 let a = eval_stack.pop().unwrap();
                 match operator {
                     ":" | "," | " " => {
-                        // eval_stack.push(Token ::reference(
-                        //     token_type: TokenType::Reference,
-                        //     // content:
-                        // });
+                        let b = eval_stack.pop().unwrap();
+                        println!("A: {:?}, B: {:?}", a, b);
+                        if !(a.token_type == TokenType::Reference
+                            && b.token_type == TokenType::Reference)
+                        {
+                            eprintln!("Reference operation error");
+                            return Err(());
+                        }
+                        eval_stack.push(Token::reference(apply_reference_operator(
+                            a.reference_set.unwrap(),
+                            b.reference_set.unwrap(),
+                            operator,
+                        )));
                     }
                     "-1" => {
                         eval_stack.push(Token::new(
@@ -601,11 +590,19 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
             }
             TokenType::Reference => {
                 // TODO: Handle lists of references
-                let parsed_ref = parse_reference(&token.content).unwrap();
-                let ref_cell = &parsed_ref.get_cell();
-                let value = spreadsheet.get_cell_value(ref_cell).unwrap();
-                eval_stack.push(value)
-                // TODO: Evil unwrap
+                // if let Some(refs) = &token.reference_set {
+                //     if refs.len() == 1 {
+                //         let reference = refs.first().unwrap(); // Safe unwrap :)
+                //         let value = spreadsheet.get_cell_value(&reference.get_cell()).unwrap();
+                //         eval_stack.push(value)
+                //         // TODO: Evil unwrap
+                //     } else {
+                //         eval_stack.push(token.clone());
+                //     }
+                // } else {
+                //     return Err(());
+                // }
+                eval_stack.push(token.clone());
             }
             TokenType::String | TokenType::Boolean | TokenType::Number => {
                 eval_stack.push(token.clone());
