@@ -9,7 +9,7 @@ use ratatui::{
 use crate::{
     app::{App, AppArea},
     formulas,
-    spreadsheet::{Spreadsheet, SpreadsheetCell, SPREADSHEET_MAX_COLS},
+    spreadsheet::{self, Spreadsheet, SpreadsheetCell, SPREADSHEET_MAX_COLS},
 };
 
 fn left_pad(string: String, length: usize, pad_char: char) -> String {
@@ -34,13 +34,21 @@ fn right_pad(string: String, length: usize, pad_char: char) -> String {
     working
 }
 
-fn render_cell(cell: &str, max_length: usize, decimals: u32) -> String {
+fn render_cell(
+    cell: &SpreadsheetCell,
+    max_length: usize,
+    decimals: u32,
+    spreadsheet: &Spreadsheet,
+) -> String {
+    let cell_text = spreadsheet.get_cell(cell);
     let mut rendered: String;
-    if cell.starts_with("=") {
-        return formulas::eval_formula(cell).unwrap(); // TODO: Unsafe unwrap
+    if cell_text.starts_with("=") {
+        if let Ok(cell_value) = spreadsheet.get_cell_value(cell) {
+            return cell_value.content;
+        }
     }
 
-    if let Ok(number) = cell.parse::<f32>() {
+    if let Ok(number) = cell_text.parse::<f32>() {
         let rounding_scalar = f32::powf(10f32, (decimals) as f32);
         rendered = ((number * rounding_scalar).round() / rounding_scalar).to_string();
 
@@ -57,7 +65,7 @@ fn render_cell(cell: &str, max_length: usize, decimals: u32) -> String {
 
         rendered = left_pad(rendered, max_length, ' ');
     } else {
-        rendered = cell.to_string();
+        rendered = cell_text.to_string();
     }
 
     // Shouldn't ever fail, but if it does, just return an empty string
@@ -72,20 +80,22 @@ fn render_cell(cell: &str, max_length: usize, decimals: u32) -> String {
 }
 
 pub fn infinite_table<'a>(
-    spreadsheet: &'a Spreadsheet,
+    spreadsheet: &'a mut Spreadsheet,
     active_cell: &SpreadsheetCell,
     focused_area: &AppArea,
 ) -> Table<'a> {
+    spreadsheet.resize_to_cell(active_cell); // TODO: Remove this once selecting and quick cell jumping added
     let rows_map = &spreadsheet.iter_rows().enumerate().map(|(y, r)| {
         let c: Vec<Cell> = r
             .contents
             .iter()
             .enumerate()
-            .map(|(idx, value)| {
+            .map(|(idx, _)| {
                 let rendered = render_cell(
-                    &value,
+                    &SpreadsheetCell { col: idx, row: y },
                     spreadsheet.get_col_width(&SpreadsheetCell { col: idx, row: y }) as usize,
                     2,
+                    &spreadsheet,
                 );
                 if idx == active_cell.col && y == active_cell.row {
                     if *focused_area == AppArea::Data {

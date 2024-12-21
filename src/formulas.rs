@@ -1,4 +1,8 @@
-use crate::formula_functions::get_func;
+use std::collections::BTreeSet;
+
+use crate::formula_functions::{get_func, get_funcs};
+use crate::references::{parse_reference, Reference};
+use crate::spreadsheet::{self, Spreadsheet};
 
 const OPERATORS: [&'static str; 19] = [
     "-", "%", "^", "^", "*", "/", "+", "&", "=", ">=", "<=", "<>", "<", ">", "@", "#", ":", ",",
@@ -30,7 +34,7 @@ pub struct Token {
 }
 
 impl Token {
-    pub fn as_f32(&self) -> f32 {
+    pub fn as_f32(&self, spreadsheet: &Spreadsheet) -> f32 {
         match self.token_type {
             TokenType::Number => self.content.parse::<f32>().unwrap(),
             TokenType::Boolean => {
@@ -41,6 +45,27 @@ impl Token {
                 }
             }
             _ => 0.0,
+        }
+    }
+
+    pub fn is_number(&self, spreadsheet: &Spreadsheet) -> bool {
+        match self.token_type {
+            TokenType::Boolean => true,
+            TokenType::Number => true,
+            TokenType::String => self.content.parse::<f32>().is_ok(),
+            // TODO: Handle multi-refs
+            TokenType::Reference => {
+                self.content.split(",").all(|r| {
+                    if let Some(reference) = parse_reference(r) {
+                        if let Ok(cell_value) = spreadsheet.get_cell_value(&reference.get_cell()) {
+                            return cell_value.is_number(spreadsheet);
+                        }
+                    }
+                    false
+                })
+                // spreadsheet.get_cell_value()
+            }
+            _ => false,
         }
     }
 }
@@ -113,7 +138,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                 });
             }
         } else if current_char.is_ascii_alphabetic() {
-            // Parse functions, booleans, and (some) cell references.
+            // Parse functions, booleans, and (most) cell references.
 
             let mut textual_content = String::new();
             // Allow for multiple numerical characters to follow one another, as is usual
@@ -141,22 +166,36 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                 });
                 // Decrement parse index because it went over by one in the while loop.
                 parse_idx -= 1
-            } else if let Some(func_open_paren) = formula.chars().nth(parse_idx) {
-                // TODO: Again, chain if-let statements...
-                if func_open_paren == '(' {
-                    parsed.push(Token {
-                        token_type: TokenType::Function,
-                        content: textual_content.to_uppercase(),
-                        function_n_args: None,
-                    });
-                    if let Some(close_paren_idx) = find_close_paren(formula, parse_idx) {
-                        func_close_parens.push(close_paren_idx);
-                    }
+            } else if get_funcs().contains_key(textual_content.to_uppercase().as_str()) {
+                // Checks if the text is a valid function name, in which case then it proceeds with function parsing.
 
-                    // Resetting with parse_idx -= 1 should NOT happen because the left parenthesis should be consumed
-                } else {
-                    return Err(()); // Function doesn't have an opening parenthesis
+                // TODO: Again, chain if-let statements...
+                if let Some(func_open_paren) = formula.chars().nth(parse_idx) {
+                    if func_open_paren == '(' {
+                        parsed.push(Token {
+                            token_type: TokenType::Function,
+                            content: textual_content.to_uppercase(),
+                            function_n_args: None,
+                        });
+                        if let Some(close_paren_idx) = find_close_paren(formula, parse_idx) {
+                            func_close_parens.push(close_paren_idx);
+                        }
+
+                        // Resetting with parse_idx -= 1 should NOT happen because the left parenthesis should be consumed
+                    } else {
+                        eprintln!("Error: Function doesn't have an opening parenthesis");
+                        return Err(()); // Function doesn't have an opening parenthesis
+                    }
                 }
+            } else if parse_reference(&textual_content).is_some() {
+                // Only need to know if it's successful, not the resulting ref
+                parsed.push(Token {
+                    token_type: TokenType::Reference,
+                    content: textual_content.to_uppercase(),
+                    function_n_args: None,
+                });
+                // Decrement parse index because it went over by one in the while loop.
+                parse_idx -= 1
             }
         } else if current_char == '(' {
             // Parse left parentheses
@@ -183,6 +222,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                 });
             }
         } else if current_char == '"' {
+            // Parse string
             let mut string_value = String::new();
 
             // TODO: if-while (if-let for searchability) chaining... man I need this
@@ -337,7 +377,35 @@ fn apply_comparison_operator(a: f32, b: f32, operator: &str) -> bool {
     }
 }
 
-pub fn eval_formula(formula: &str) -> Result<String, ()> {
+// fn apply_reference_operator(a: BTreeSet<&Reference>, b: BTreeSet<&Reference>, operator: &str) -> BTreeSet<&Reference> {
+//     match  operator {
+//         ":" => a.first().unwrap().range(b.first().unwrap()),
+//         "," => BTreeSet::from_iter(a.union(&b)),
+//         " " => BTreeSet::from_iter(a.intersection(&b)),
+//         _ => a
+//     }
+// }
+
+pub fn cell_to_token(cell_value: &str, spreadsheet: &Spreadsheet) -> Result<Token, ()> {
+    // Parses a single cell as a single value (boolean or number), else a string
+    // Unless, of course, it's another formula-
+    if cell_value.starts_with("=") {
+        return eval_formula(&cell_value[1..], spreadsheet);
+    }
+    let mut token_type = TokenType::Number;
+    if cell_value.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        token_type = TokenType::Number;
+    } else if cell_value.to_uppercase() == "FALSE" || cell_value.to_uppercase() == "True" {
+        token_type = TokenType::Boolean;
+    }
+    Ok(Token {
+        token_type: token_type,
+        content: cell_value.to_string(),
+        function_n_args: None,
+    })
+}
+
+pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, ()> {
     let parsed = parse_formula(formula).unwrap_or_default(); // TODO: Add some error checking
 
     // TODO: Support for non-numbers
@@ -345,8 +413,7 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
     let mut operator_stack: Vec<Token> = Vec::new();
     let mut function_stack: Vec<Token> = Vec::new();
 
-    for token in parsed[1..].iter() {
-        // This is me skipping the = at the start
+    for token in parsed.iter() {
         match token.token_type {
             TokenType::LeftParen => {
                 operator_stack.push(token.clone());
@@ -389,9 +456,6 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                     }
                 }
             }
-            TokenType::Reference => {
-                todo!()
-            }
             TokenType::Operator => {
                 let current_precedence = get_operator_precedence(token.content.as_str());
 
@@ -411,7 +475,7 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
 
                 operator_stack.push(token.clone());
             }
-            TokenType::String | TokenType::Boolean | TokenType::Number => {
+            TokenType::String | TokenType::Boolean | TokenType::Number | TokenType::Reference => {
                 output_queue.push(token.clone());
             }
         }
@@ -462,17 +526,23 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                 let operator = token.content.as_str();
                 let a = eval_stack.pop().unwrap();
                 match operator {
+                    ":" | "," | " " => {
+                        // eval_stack.push(Token {
+                        //     token_type: TokenType::Reference,
+
+                        // });
+                    }
                     "-1" => {
                         eval_stack.push(Token {
                             token_type: TokenType::Number,
-                            content: (-a.as_f32()).to_string(),
+                            content: (-a.as_f32(spreadsheet)).to_string(),
                             function_n_args: None,
                         });
                     }
                     "%" => {
                         eval_stack.push(Token {
                             token_type: TokenType::Number,
-                            content: (a.as_f32() / 100.).to_string(),
+                            content: (a.as_f32(spreadsheet) / 100.).to_string(),
                             function_n_args: None,
                         });
                     }
@@ -481,8 +551,12 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
 
                         eval_stack.push(Token {
                             token_type: TokenType::Number,
-                            content: apply_arithmetic_operator(b.as_f32(), a.as_f32(), operator)
-                                .to_string(),
+                            content: apply_arithmetic_operator(
+                                b.as_f32(spreadsheet),
+                                a.as_f32(spreadsheet),
+                                operator,
+                            )
+                            .to_string(),
                             function_n_args: None,
                         });
                     }
@@ -513,9 +587,13 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
 
                         eval_stack.push(Token {
                             token_type: TokenType::Boolean,
-                            content: apply_comparison_operator(b.as_f32(), a.as_f32(), operator)
-                                .to_string()
-                                .to_uppercase(),
+                            content: apply_comparison_operator(
+                                b.as_f32(spreadsheet),
+                                a.as_f32(spreadsheet),
+                                operator,
+                            )
+                            .to_string()
+                            .to_uppercase(),
                             function_n_args: None,
                         });
                     }
@@ -530,13 +608,21 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
                         args.push(eval_stack.pop().unwrap());
                     }
                     args.reverse(); // Makes writing the functions a hell of a lot easier
-                    if let Ok(result) = func.call(args.as_slice()) {
+                    if let Ok(result) = func.call(args.as_slice(), spreadsheet) {
                         // println!("Result of function {}: {:?}", token.content, result);
                         eval_stack.extend(result);
                     }
                 } else {
                     return Err(());
                 }
+            }
+            TokenType::Reference => {
+                // TODO: Handle lists of references
+                let parsed_ref = parse_reference(&token.content).unwrap();
+                let ref_cell = &parsed_ref.get_cell();
+                let value = spreadsheet.get_cell_value(ref_cell).unwrap();
+                eval_stack.push(value)
+                // TODO: Evil unwrap
             }
             TokenType::String | TokenType::Boolean | TokenType::Number => {
                 eval_stack.push(token.clone());
@@ -547,5 +633,7 @@ pub fn eval_formula(formula: &str) -> Result<String, ()> {
         }
     }
 
-    Ok(eval_stack.first().unwrap().content.to_string()) // TODO: Don't return just a String
+    // TODO: Allow returning multiple things for those oddly specific functions
+    Ok(eval_stack.first().unwrap().clone())
+    // Ok(eval_stack.first().unwrap().content.to_string()) // TODO: Don't return just a String
 }

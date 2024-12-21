@@ -84,7 +84,7 @@ impl App {
 
         frame.render_widget(self.editor.render(), main_layout[0]);
         frame.render_widget(
-            infinite_table(&self.spreadsheet, &self.active_cell, &self.focused_area),
+            infinite_table(&mut self.spreadsheet, &self.active_cell, &self.focused_area),
             main_layout[1]
         );
     }

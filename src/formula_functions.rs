@@ -1,8 +1,12 @@
+use rand::Rng;
 use std::{collections::HashMap, f32::consts::PI, sync::OnceLock};
 
-use crate::formulas::{Token, TokenType};
+use crate::{
+    formulas::{Token, TokenType},
+    spreadsheet::Spreadsheet,
+};
 
-pub fn get_funcs() -> &'static HashMap<&'static str, &'static(dyn FormulaFunction + Sync)> {
+pub fn get_funcs() -> &'static HashMap<&'static str, &'static (dyn FormulaFunction + Sync)> {
     static FUNCTIONS: OnceLock<HashMap<&str, &(dyn FormulaFunction + Sync)>> = OnceLock::new();
     FUNCTIONS.get_or_init(|| {
         let mut m: HashMap<&str, &(dyn FormulaFunction + Sync)> = HashMap::new();
@@ -10,6 +14,7 @@ pub fn get_funcs() -> &'static HashMap<&'static str, &'static(dyn FormulaFunctio
         m.insert("SQRT", &Sqrt {});
         m.insert("IF", &If {});
         m.insert("PI", &Pi {});
+        m.insert("RAND", &Rand {});
         m
     })
 }
@@ -19,13 +24,13 @@ pub fn get_func(name: &str) -> Option<&&(dyn FormulaFunction + Sync)> {
 }
 
 pub trait FormulaFunction {
-    fn call(&self, args: &[Token]) -> Result<Vec<Token>, ()>;
+    fn call(&self, args: &[Token], spreadsheet: &Spreadsheet) -> Result<Vec<Token>, ()>;
 }
 
 struct Sum;
 impl FormulaFunction for Sum {
-    fn call(&self, args: &[Token]) -> Result<Vec<Token>, ()> {
-        if !args.iter().all(|t| t.token_type == TokenType::Number) {
+    fn call(&self, args: &[Token], spreadsheet: &Spreadsheet) -> Result<Vec<Token>, ()> {
+        if !args.iter().all(|t| t.is_number(spreadsheet)) {
             return Err(());
         }
         Ok(vec![Token {
@@ -42,7 +47,7 @@ impl FormulaFunction for Sum {
 
 struct Sqrt;
 impl FormulaFunction for Sqrt {
-    fn call(&self, args: &[Token]) -> Result<Vec<Token>, ()> {
+    fn call(&self, args: &[Token], spreadsheet: &Spreadsheet) -> Result<Vec<Token>, ()> {
         if args.len() == 1 && args[0].token_type == TokenType::Number {
             return Ok(vec![Token {
                 token_type: TokenType::Number,
@@ -56,7 +61,7 @@ impl FormulaFunction for Sqrt {
 
 struct If;
 impl FormulaFunction for If {
-    fn call(&self, args: &[Token]) -> Result<Vec<Token>, ()> {
+    fn call(&self, args: &[Token], spreadsheet: &Spreadsheet) -> Result<Vec<Token>, ()> {
         // Fluffing if-let chaining again
         if args.len() < 2 {
             return Err(());
@@ -67,7 +72,7 @@ impl FormulaFunction for If {
             return Err(());
         }
 
-        if condition.as_f32() == 1.0 {
+        if condition.as_f32(spreadsheet) == 1.0 {
             return Ok(vec![args[1].clone()]);
         } else {
             return Ok(vec![args
@@ -84,13 +89,28 @@ impl FormulaFunction for If {
 
 struct Pi;
 impl FormulaFunction for Pi {
-    fn call(&self, args: &[Token]) -> Result<Vec<Token>, ()> {
+    fn call(&self, args: &[Token], spreadsheet: &Spreadsheet) -> Result<Vec<Token>, ()> {
         if args.len() > 0 {
             return Err(());
         }
         return Ok(vec![Token {
             token_type: TokenType::Number,
             content: PI.to_string(),
+            function_n_args: None,
+        }]);
+    }
+}
+
+struct Rand;
+impl FormulaFunction for Rand {
+    fn call(&self, args: &[Token], spreadsheet: &Spreadsheet) -> Result<Vec<Token>, ()> {
+        if args.len() > 0 {
+            return Err(());
+        }
+
+        return Ok(vec![Token {
+            token_type: TokenType::Number,
+            content: rand::random::<f64>().to_string(),
             function_n_args: None,
         }]);
     }

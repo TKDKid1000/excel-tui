@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::{Error, ErrorKind};
 
-use crate::formulas::{eval_formula, Token};
+use crate::formulas::{cell_to_token, eval_formula, Token, TokenType};
 
 #[derive(Debug)]
 pub struct SpreadsheetRowIteratorItem {
@@ -109,7 +109,7 @@ impl Spreadsheet {
         self.data[cell.row].contents[cell.col] = value.to_string();
     }
 
-    fn resize_to_cell(&mut self, cell: &SpreadsheetCell) {
+    pub fn resize_to_cell(&mut self, cell: &SpreadsheetCell) {
         if cell.row >= self.data.len() {
             self.data.resize(cell.row, SpreadsheetRow::default());
         }
@@ -138,7 +138,7 @@ impl Spreadsheet {
 
     // TODO: Make it a Vec<Token> once functions with multiple outputs are implemented
     pub fn get_cell_value(&self, cell: &SpreadsheetCell) -> Result<Token, ()> {
-        return eval_formula(self.get_cell(cell), &self);
+        return cell_to_token(self.get_cell(cell), self);
     }
 }
 
