@@ -1,4 +1,3 @@
-use rand::Rng;
 use std::{collections::HashMap, f32::consts::PI, sync::OnceLock};
 
 use crate::{
@@ -33,15 +32,13 @@ impl FormulaFunction for Sum {
         if !args.iter().all(|t| t.is_number(spreadsheet)) {
             return Err(());
         }
-        Ok(vec![Token {
-            token_type: TokenType::Number,
-            content: args
-                .iter()
+        Ok(vec![Token::new(
+            TokenType::Number,
+            args.iter()
                 .map(|t| t.content.parse::<f32>().unwrap())
                 .sum::<f32>()
                 .to_string(),
-            function_n_args: None,
-        }])
+        )])
     }
 }
 
@@ -49,11 +46,10 @@ struct Sqrt;
 impl FormulaFunction for Sqrt {
     fn call(&self, args: &[Token], spreadsheet: &Spreadsheet) -> Result<Vec<Token>, ()> {
         if args.len() == 1 && args[0].token_type == TokenType::Number {
-            return Ok(vec![Token {
-                token_type: TokenType::Number,
-                content: args[0].content.parse::<f32>().unwrap().sqrt().to_string(),
-                function_n_args: None,
-            }]);
+            return Ok(vec![Token::new(
+                TokenType::Number,
+                args[0].content.parse::<f32>().unwrap().sqrt().to_string(),
+            )]);
         }
         return Err(());
     }
@@ -77,11 +73,7 @@ impl FormulaFunction for If {
         } else {
             return Ok(vec![args
                 .get(2)
-                .unwrap_or(&Token {
-                    token_type: TokenType::Boolean,
-                    content: String::from("FALSE"),
-                    function_n_args: None,
-                })
+                .unwrap_or(&Token::new(TokenType::Boolean, String::from("FALSE")))
                 .clone()]);
         }
     }
@@ -93,11 +85,7 @@ impl FormulaFunction for Pi {
         if args.len() > 0 {
             return Err(());
         }
-        return Ok(vec![Token {
-            token_type: TokenType::Number,
-            content: PI.to_string(),
-            function_n_args: None,
-        }]);
+        return Ok(vec![Token::new(TokenType::Number, PI.to_string())]);
     }
 }
 
@@ -108,10 +96,9 @@ impl FormulaFunction for Rand {
             return Err(());
         }
 
-        return Ok(vec![Token {
-            token_type: TokenType::Number,
-            content: rand::random::<f64>().to_string(),
-            function_n_args: None,
-        }]);
+        return Ok(vec![Token::new(
+            TokenType::Number,
+            rand::random::<f64>().to_string(),
+        )]);
     }
 }

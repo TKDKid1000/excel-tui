@@ -4,7 +4,7 @@ use ratatui::crossterm::style::Stylize;
 
 use crate::spreadsheet::SpreadsheetCell;
 
-#[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Hash, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Reference {
     // A 0-indexed reference to a cell
     // Actual Excel references are 1-indexed and use letters for rows, but this is an abstraction.
@@ -13,17 +13,17 @@ pub struct Reference {
 }
 
 impl Reference {
-    pub fn range(&self, other: &Reference) -> BTreeSet<Reference> {
+    pub fn range(&self, other: &Reference) -> Vec<Reference> {
         let min_row = min(self.row, other.row).unwrap();
         let min_col = min(self.col, other.col).unwrap();
         let max_row = max(self.row, other.row).unwrap();
         let max_col = max(self.col, other.col).unwrap();
 
-        let mut cells: BTreeSet<Reference> = BTreeSet::new();
+        let mut cells: Vec<Reference> = Vec::new();
 
         for row in min_row..=max_row{
             for col in min_col..=max_col {
-                cells.insert(Reference {
+                cells.push(Reference {
                     row: Some(row),
                     col: Some(col)
                 });

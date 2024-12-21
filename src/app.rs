@@ -115,12 +115,6 @@ impl App {
             KeyCode::Char('q') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.exit = true
             }
-            KeyCode::Delete => {
-                print!(
-                    "                              {:?}                ",
-                    self.spreadsheet.col_widths
-                );
-            }
             _ => (),
         }
     }
@@ -192,6 +186,9 @@ impl App {
                 self.focused_area = AppArea::Editor;
                 self.editor.set_value(c.to_string());
                 self.editor.set_cursor(self.editor.value().len());
+            }
+            KeyCode::Backspace | KeyCode::Delete =>{
+                self.spreadsheet.set_cell(&self.active_cell, "");
             }
             _ => (),
         }

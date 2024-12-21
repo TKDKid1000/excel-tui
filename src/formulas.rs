@@ -16,7 +16,7 @@ pub enum TokenType {
     Function,
     FuncClose,
     FuncArgSep, // aka a comma
-    Reference,  // TODO: Implement this (it's only uncommented for FuncArgSep logic)
+    Reference,
     Number,
     #[default] // String is definitely the default
     String,
@@ -31,9 +31,37 @@ pub struct Token {
     pub token_type: TokenType,
     pub content: String,
     pub function_n_args: Option<u8>,
+    pub reference_set: Option<BTreeSet<Reference>>,
 }
 
 impl Token {
+    pub fn new(token_type: TokenType, content: String) -> Token {
+        Token {
+            token_type,
+            content,
+            function_n_args: None,
+            reference_set: None,
+        }
+    }
+
+    pub fn function(content: String, n_args: u8) -> Token {
+        Token {
+            token_type: TokenType::Function,
+            content: content,
+            function_n_args: Some(n_args),
+            reference_set: None,
+        }
+    }
+
+    pub fn reference(refs: BTreeSet<Reference>) -> Token {
+        Token {
+            token_type: TokenType::Reference,
+            content: String::new(),
+            function_n_args: None,
+            reference_set: Some(refs),
+        }
+    }
+
     pub fn as_f32(&self, spreadsheet: &Spreadsheet) -> f32 {
         match self.token_type {
             TokenType::Number => self.content.parse::<f32>().unwrap(),
@@ -111,11 +139,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                 parse_idx += 1;
             }
 
-            parsed.push(Token {
-                token_type: TokenType::Number,
-                content: number_content,
-                function_n_args: None,
-            });
+            parsed.push(Token::new(TokenType::Number, number_content));
             parse_idx -= 1;
         } else if OPERATORS.contains(&current_char.to_string().as_str()) {
             // Parse operators
@@ -124,18 +148,10 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
 
             // Check if it's >=, <=, or <>
             if OPERATORS.contains(&extended_operator.as_str()) {
-                parsed.push(Token {
-                    token_type: TokenType::Operator,
-                    content: extended_operator,
-                    function_n_args: None,
-                });
+                parsed.push(Token::new(TokenType::Operator, extended_operator));
                 parse_idx += 1 // Increment parse index because we consumed the next char
             } else {
-                parsed.push(Token {
-                    token_type: TokenType::Operator,
-                    content: current_char.to_string(),
-                    function_n_args: None,
-                });
+                parsed.push(Token::new(TokenType::Operator, current_char.to_string()));
             }
         } else if current_char.is_ascii_alphabetic() {
             // Parse functions, booleans, and (most) cell references.
@@ -159,11 +175,10 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
 
             if textual_content.to_uppercase() == "TRUE" || textual_content.to_uppercase() == "FALSE"
             {
-                parsed.push(Token {
-                    token_type: TokenType::Boolean,
-                    content: textual_content.to_uppercase(),
-                    function_n_args: None,
-                });
+                parsed.push(Token::new(
+                    TokenType::Boolean,
+                    textual_content.to_uppercase(),
+                ));
                 // Decrement parse index because it went over by one in the while loop.
                 parse_idx -= 1
             } else if get_funcs().contains_key(textual_content.to_uppercase().as_str()) {
@@ -172,11 +187,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                 // TODO: Again, chain if-let statements...
                 if let Some(func_open_paren) = formula.chars().nth(parse_idx) {
                     if func_open_paren == '(' {
-                        parsed.push(Token {
-                            token_type: TokenType::Function,
-                            content: textual_content.to_uppercase(),
-                            function_n_args: None,
-                        });
+                        parsed.push(Token::function(textual_content.to_uppercase(), 0));
                         if let Some(close_paren_idx) = find_close_paren(formula, parse_idx) {
                             func_close_parens.push(close_paren_idx);
                         }
@@ -187,39 +198,23 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                         return Err(()); // Function doesn't have an opening parenthesis
                     }
                 }
-            } else if parse_reference(&textual_content).is_some() {
+            } else if let Some(parsed_ref) = parse_reference(&textual_content.to_uppercase()) {
                 // Only need to know if it's successful, not the resulting ref
-                parsed.push(Token {
-                    token_type: TokenType::Reference,
-                    content: textual_content.to_uppercase(),
-                    function_n_args: None,
-                });
+                parsed.push(Token::reference(BTreeSet::from([parsed_ref])));
                 // Decrement parse index because it went over by one in the while loop.
                 parse_idx -= 1
             }
         } else if current_char == '(' {
             // Parse left parentheses
 
-            parsed.push(Token {
-                token_type: TokenType::LeftParen,
-                content: String::new(),
-                function_n_args: None,
-            });
+            parsed.push(Token::new(TokenType::LeftParen, String::new()));
         } else if current_char == ')' {
             // Parse right parentheses
 
             if func_close_parens.contains(&parse_idx) {
-                parsed.push(Token {
-                    token_type: TokenType::FuncClose,
-                    content: String::new(),
-                    function_n_args: None,
-                });
+                parsed.push(Token::new(TokenType::FuncClose, String::new()));
             } else {
-                parsed.push(Token {
-                    token_type: TokenType::RightParen,
-                    content: String::new(),
-                    function_n_args: None,
-                });
+                parsed.push(Token::new(TokenType::RightParen, String::new()));
             }
         } else if current_char == '"' {
             // Parse string
@@ -236,11 +231,7 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
                 parse_idx += 1;
             }
 
-            parsed.push(Token {
-                token_type: TokenType::String,
-                content: string_value,
-                function_n_args: None,
-            });
+            parsed.push(Token::new(TokenType::String, string_value));
         }
 
         parse_idx += 1
@@ -377,14 +368,18 @@ fn apply_comparison_operator(a: f32, b: f32, operator: &str) -> bool {
     }
 }
 
-// fn apply_reference_operator(a: BTreeSet<&Reference>, b: BTreeSet<&Reference>, operator: &str) -> BTreeSet<&Reference> {
-//     match  operator {
-//         ":" => a.first().unwrap().range(b.first().unwrap()),
-//         "," => BTreeSet::from_iter(a.union(&b)),
-//         " " => BTreeSet::from_iter(a.intersection(&b)),
-//         _ => a
-//     }
-// }
+fn apply_reference_operator(
+    a: BTreeSet<Reference>,
+    b: BTreeSet<Reference>,
+    operator: &str,
+) -> Vec<Reference> {
+    match operator {
+        ":" => a.first().unwrap().range(b.first().unwrap()),
+        "," => a.union(&b).cloned().collect::<Vec<Reference>>(),
+        " " => a.intersection(&b).cloned().collect::<Vec<Reference>>(),
+        _ => a.iter().cloned().collect::<Vec<Reference>>(),
+    }
+}
 
 pub fn cell_to_token(cell_value: &str, spreadsheet: &Spreadsheet) -> Result<Token, ()> {
     // Parses a single cell as a single value (boolean or number), else a string
@@ -398,11 +393,7 @@ pub fn cell_to_token(cell_value: &str, spreadsheet: &Spreadsheet) -> Result<Toke
     } else if cell_value.to_uppercase() == "FALSE" || cell_value.to_uppercase() == "True" {
         token_type = TokenType::Boolean;
     }
-    Ok(Token {
-        token_type: token_type,
-        content: cell_value.to_string(),
-        function_n_args: None,
-    })
+    Ok(Token::new(token_type, cell_value.to_string()))
 }
 
 pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, ()> {
@@ -527,38 +518,35 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
                 let a = eval_stack.pop().unwrap();
                 match operator {
                     ":" | "," | " " => {
-                        // eval_stack.push(Token {
+                        // eval_stack.push(Token ::reference(
                         //     token_type: TokenType::Reference,
-
+                        //     // content:
                         // });
                     }
                     "-1" => {
-                        eval_stack.push(Token {
-                            token_type: TokenType::Number,
-                            content: (-a.as_f32(spreadsheet)).to_string(),
-                            function_n_args: None,
-                        });
+                        eval_stack.push(Token::new(
+                            TokenType::Number,
+                            (-a.as_f32(spreadsheet)).to_string(),
+                        ));
                     }
                     "%" => {
-                        eval_stack.push(Token {
-                            token_type: TokenType::Number,
-                            content: (a.as_f32(spreadsheet) / 100.).to_string(),
-                            function_n_args: None,
-                        });
+                        eval_stack.push(Token::new(
+                            TokenType::Number,
+                            (a.as_f32(spreadsheet) / 100.).to_string(),
+                        ));
                     }
                     "+" | "-" | "*" | "/" | "^" => {
                         let b = eval_stack.pop().unwrap();
 
-                        eval_stack.push(Token {
-                            token_type: TokenType::Number,
-                            content: apply_arithmetic_operator(
+                        eval_stack.push(Token::new(
+                            TokenType::Number,
+                            apply_arithmetic_operator(
                                 b.as_f32(spreadsheet),
                                 a.as_f32(spreadsheet),
                                 operator,
                             )
                             .to_string(),
-                            function_n_args: None,
-                        });
+                        ));
                     }
                     "&" => {
                         let b = eval_stack.pop().unwrap();
@@ -576,26 +564,21 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
                             concatenated = concatenated.to_uppercase();
                         }
 
-                        eval_stack.push(Token {
-                            token_type: concatenated_type,
-                            content: concatenated,
-                            function_n_args: None,
-                        });
+                        eval_stack.push(Token::new(concatenated_type, concatenated));
                     }
                     "=" | "<" | ">" | "<=" | ">=" | "<>" => {
                         let b: Token = eval_stack.pop().unwrap();
 
-                        eval_stack.push(Token {
-                            token_type: TokenType::Boolean,
-                            content: apply_comparison_operator(
+                        eval_stack.push(Token::new(
+                            TokenType::Boolean,
+                            apply_comparison_operator(
                                 b.as_f32(spreadsheet),
                                 a.as_f32(spreadsheet),
                                 operator,
                             )
                             .to_string()
                             .to_uppercase(),
-                            function_n_args: None,
-                        });
+                        ));
                     }
                     _ => {}
                 }
