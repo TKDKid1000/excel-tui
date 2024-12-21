@@ -29,15 +29,34 @@ pub trait FormulaFunction {
 struct Sum;
 impl FormulaFunction for Sum {
     fn call(&self, args: &[Token], spreadsheet: &Spreadsheet) -> Result<Vec<Token>, ()> {
-        if !args.iter().all(|t| t.is_number(spreadsheet)) {
-            return Err(());
+        let mut nums: Vec<f32> = Vec::new();
+        for arg in args {
+            if arg.is_number(spreadsheet) {
+                nums.push(arg.as_f32(spreadsheet));
+            }
+            if let Some(ref_set) = &arg.reference_set {
+                let mut referennced_nums: Vec<f32> = ref_set
+                    .iter()
+                    .filter(|r| {
+                        spreadsheet
+                            .get_cell_value(&r.get_cell())
+                            .unwrap()
+                            .is_number(spreadsheet)
+                    })
+                    .map(|r| {
+                        spreadsheet
+                            .get_cell_value(&r.get_cell())
+                            .unwrap()
+                            .as_f32(spreadsheet)
+                    })
+                    .collect();
+
+                nums.append(&mut referennced_nums);
+            }
         }
         Ok(vec![Token::new(
             TokenType::Number,
-            args.iter()
-                .map(|t| t.content.parse::<f32>().unwrap())
-                .sum::<f32>()
-                .to_string(),
+            nums.iter().sum::<f32>().to_string(),
         )])
     }
 }

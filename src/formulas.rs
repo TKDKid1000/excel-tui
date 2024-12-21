@@ -317,7 +317,7 @@ fn get_operator_precedence(operator: &str) -> u8 {
     // TODO: Add the rest of these from Excel's docs
     match operator {
         // Reference operators
-        ":" => 8,
+        ":" => 9, // This needs a higher precedence than is listed on Excel's website
         "," => 8,
         " " => 8,
         // Negation
@@ -481,14 +481,6 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
         }
     }
 
-    println!(
-        "Output Queue: {:?}",
-        output_queue
-            .iter()
-            .map(|t| t.token_type.clone())
-            .collect::<Vec<TokenType>>()
-    );
-
     let mut eval_stack: Vec<Token> = Vec::new();
     for token in output_queue.iter() {
         match token.token_type {
@@ -499,7 +491,6 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
                 match operator {
                     ":" | "," | " " => {
                         let b = eval_stack.pop().unwrap();
-                        println!("A: {:?}, B: {:?}", a, b);
                         if !(a.token_type == TokenType::Reference
                             && b.token_type == TokenType::Reference)
                         {

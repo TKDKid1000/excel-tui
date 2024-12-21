@@ -1,4 +1,8 @@
-use std::{cell::Ref, cmp::{max, min}, collections::BTreeSet};
+use std::{
+    cell::Ref,
+    cmp::{max, min},
+    collections::BTreeSet,
+};
 
 use ratatui::crossterm::style::Stylize;
 
@@ -21,21 +25,25 @@ impl Reference {
 
         let mut cells: Vec<Reference> = Vec::new();
 
-        for row in min_row..=max_row{
+        for row in min_row..=max_row {
             for col in min_col..=max_col {
                 cells.push(Reference {
                     row: Some(row),
-                    col: Some(col)
+                    col: Some(col),
                 });
             }
         }
-        
+
         cells
     }
 
     pub fn to_string(&self) -> String {
         if self.row.is_some() && self.col.is_some() {
-            return format!("({},{})", self.col.unwrap(), self.row.unwrap());
+            return format!(
+                "({},{})",
+                Reference::index_to_alpha(self.col.unwrap() as u32 + 1).unwrap(),
+                self.row.unwrap() + 1
+            );
         }
         if self.row.is_some() {
             return format!("{}", self.row.unwrap());

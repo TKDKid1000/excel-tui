@@ -40,11 +40,11 @@ fn render_cell(
     decimals: u32,
     spreadsheet: &Spreadsheet,
 ) -> String {
-    let cell_text = spreadsheet.get_cell(cell);
+    let mut cell_text = spreadsheet.get_cell(cell).to_string();
     let mut rendered: String;
     if cell_text.starts_with("=") {
         if let Ok(cell_value) = spreadsheet.get_cell_value(cell) {
-            return cell_value.content;
+            cell_text = cell_value.content
         }
     }
 

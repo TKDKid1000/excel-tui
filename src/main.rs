@@ -32,8 +32,9 @@ fn main() -> Result<()> {
     // let formula = //formulas::parse_formula("A5:B12,C5:D16").unwrap();
     // formulas::parse_formula("=SUM(--(COUNTIF(D5:D12,B5:B16, False)>=0))+\"Hello there\"+1+(A5:b26)")
     //     .unwrap();
-    // let formula = "=-3+-4*(2+(-2+3)*4)/5";
-    // let formula = "sum(c2:c10)";
+    // let formula = "-3+-4*(2+(-2+3)*4)/5";
+    // let formula = "6*(2+2)";
+    // let formula = "SUM(C4:D5,D6:D8)";
     // println!("Parsed values:");
     // for part in parse_formula(formula).unwrap() {
     //     println!("{:?}", part)
