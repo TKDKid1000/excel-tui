@@ -7,7 +7,7 @@ use ratatui::{
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     },
-    layout::{Constraint, Direction, Layout, Offset, Position},
+    layout::{Constraint, Direction, Layout, Position},
     widgets::ScrollbarState,
     Frame, Terminal,
 };

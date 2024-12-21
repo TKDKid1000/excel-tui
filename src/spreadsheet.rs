@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::{Error, ErrorKind};
 
-use crate::formulas::{cell_to_token, eval_formula, Token, TokenType};
+use crate::formulas::{cell_to_token, Token };
 
 #[derive(Debug)]
 pub struct SpreadsheetRowIteratorItem {
@@ -81,9 +81,9 @@ impl Spreadsheet {
         });
     }
 
-    fn from_xls(path: &str) {
-        todo!()
-    }
+    // fn from_xls(path: &str) {
+    //     todo!()
+    // }
 
     // TODO: Give this a range parameter.
     pub fn iter_rows(&self) -> std::slice::Iter<'_, SpreadsheetRow> {

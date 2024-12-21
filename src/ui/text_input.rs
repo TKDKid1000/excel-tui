@@ -1,12 +1,7 @@
-use std::cmp::min;
-
 use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    layout::{Alignment, Position},
-    style::{Style, Stylize},
-    text::{Line, Span, Text},
-    widgets::{Paragraph, Widget},
-    Frame,
+    crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    style::Stylize,
+    text::{Line, Span},
 };
 
 // Simple, single-line text input box
@@ -86,7 +81,6 @@ impl TextInput {
             Event::Mouse(mouse_event) => match mouse_event.kind {
                 event::MouseEventKind::Down(_) => {
                     // TODO: Handle other mouse buttons, if they even do anything.
-                    
                 }
                 _ => (),
             },

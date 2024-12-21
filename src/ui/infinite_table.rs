@@ -7,9 +7,8 @@ use ratatui::{
 };
 
 use crate::{
-    app::{App, AppArea},
-    formulas,
-    spreadsheet::{self, Spreadsheet, SpreadsheetCell, SPREADSHEET_MAX_COLS},
+    app::AppArea,
+    spreadsheet::{Spreadsheet, SpreadsheetCell},
 };
 
 fn left_pad(string: String, length: usize, pad_char: char) -> String {

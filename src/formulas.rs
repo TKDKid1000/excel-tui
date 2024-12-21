@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::formula_functions::{get_func, get_funcs};
 use crate::references::{parse_reference, Reference};
-use crate::spreadsheet::{self, Spreadsheet};
+use crate::spreadsheet::Spreadsheet;
 
 const OPERATORS: [&'static str; 19] = [
     "-", "%", "^", "^", "*", "/", "+", "&", "=", ">=", "<=", "<>", "<", ">", "@", "#", ":", ",",

@@ -1,14 +1,8 @@
-use std::{
-    cell::Ref,
-    cmp::{max, min},
-    collections::BTreeSet,
-};
-
-use ratatui::crossterm::style::Stylize;
+use std::cmp::{max, min};
 
 use crate::spreadsheet::SpreadsheetCell;
 
-#[derive(Hash, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Reference {
     // A 0-indexed reference to a cell
     // Actual Excel references are 1-indexed and use letters for rows, but this is an abstraction.
@@ -97,6 +91,12 @@ impl Reference {
             row: self.row.unwrap_or(0),
             col: self.col.unwrap_or(0),
         };
+    }
+}
+
+impl std::fmt::Debug for Reference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
     }
 }
 
