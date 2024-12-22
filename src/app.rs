@@ -1,4 +1,7 @@
-use std::io::{stdout, Result, Stdout};
+use std::{
+    collections::HashMap,
+    io::{stdout, Result, Stdout},
+};
 
 use ratatui::{
     backend::CrosstermBackend,
@@ -45,6 +48,7 @@ pub struct App {
     pub spreadsheet: Spreadsheet,
     pub active_cell: SpreadsheetCell,
     pub focused_area: AppArea,
+    pub formula_cache: HashMap<SpreadsheetCell, String>,
 
     pub editor: TextInput,
 
@@ -80,12 +84,18 @@ impl App {
 
         let main_layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Length(1), Constraint::Fill(1)]).split(frame.area());
+            .constraints(vec![Constraint::Length(1), Constraint::Fill(1)])
+            .split(frame.area());
 
         frame.render_widget(self.editor.render(), main_layout[0]);
         frame.render_widget(
-            infinite_table(&mut self.spreadsheet, &self.active_cell, &self.focused_area),
-            main_layout[1]
+            infinite_table(
+                &mut self.spreadsheet,
+                &self.active_cell,
+                &self.focused_area,
+                &mut self.formula_cache,
+            ),
+            main_layout[1],
         );
     }
 
@@ -187,7 +197,7 @@ impl App {
                 self.editor.set_value(c.to_string());
                 self.editor.set_cursor(self.editor.value().len());
             }
-            KeyCode::Backspace | KeyCode::Delete =>{
+            KeyCode::Backspace | KeyCode::Delete => {
                 self.spreadsheet.set_cell(&self.active_cell, "");
             }
             _ => (),
@@ -201,6 +211,7 @@ impl App {
                 self.focused_area = AppArea::Data;
                 self.spreadsheet
                     .set_cell(&self.active_cell, &self.editor.value());
+                self.formula_cache.clear();
 
                 if self.spreadsheet.get_col_width(&self.active_cell)
                     < self.editor.value().len() as u16

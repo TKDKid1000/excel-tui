@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::{cmp::min, collections::HashMap};
 
 use ratatui::{
     layout::Constraint,
@@ -38,12 +38,16 @@ fn render_cell(
     max_length: usize,
     decimals: u32,
     spreadsheet: &Spreadsheet,
+    formula_cache: &mut HashMap<SpreadsheetCell, String>,
 ) -> String {
     let mut cell_text = spreadsheet.get_cell(cell).to_string();
     let mut rendered: String;
     if cell_text.starts_with("=") {
-        if let Ok(cell_value) = spreadsheet.get_cell_value(cell) {
-            cell_text = cell_value.content
+        if let Some(cached_value) = formula_cache.get(cell) {
+            cell_text = cached_value.clone();
+        } else if let Ok(cell_value) = spreadsheet.get_cell_value(cell) {
+            cell_text = cell_value.content;
+            formula_cache.insert(cell.clone(), cell_text.clone());
         }
     }
 
@@ -82,34 +86,44 @@ pub fn infinite_table<'a>(
     spreadsheet: &'a mut Spreadsheet,
     active_cell: &SpreadsheetCell,
     focused_area: &AppArea,
+    formula_cache: &'a mut HashMap<SpreadsheetCell, String>,
 ) -> Table<'a> {
     spreadsheet.resize_to_cell(active_cell); // TODO: Remove this once selecting and quick cell jumping added
-    let rows_map = &spreadsheet.iter_rows().enumerate().map(|(y, r)| {
-        let c: Vec<Cell> = r
-            .contents
-            .iter()
-            .enumerate()
-            .map(|(idx, _)| {
-                let rendered = render_cell(
-                    &SpreadsheetCell { col: idx, row: y },
-                    spreadsheet.get_col_width(&SpreadsheetCell { col: idx, row: y }) as usize,
-                    2,
-                    &spreadsheet,
-                );
-                if idx == active_cell.col && y == active_cell.row {
-                    if *focused_area == AppArea::Data {
-                        return Cell::new(rendered.black().on_gray());
-                    } else {
-                        return Cell::new(rendered.on_dark_gray());
-                    }
-                }
-                Cell::new(rendered)
-            })
-            .collect();
+    let rows_map: Vec<Row> = spreadsheet
+        .iter_rows()
+        .enumerate()
+        .map(|(y, r)| {
+            let c: Vec<Cell> = r
+                .contents
+                .iter()
+                .enumerate()
+                .map(|(idx, _)| {
+                    let cell = SpreadsheetCell { col: idx, row: y };
+                    let rendered: String;
+                    rendered = render_cell(
+                        &cell,
+                        spreadsheet.get_col_width(&cell) as usize,
+                        2,
+                        &spreadsheet,
+                        formula_cache,
+                    );
 
-        Row::new(c)
-    });
-    let rows: Vec<Row> = rows_map.clone().collect();
+                    if idx == active_cell.col && y == active_cell.row {
+                        if *focused_area == AppArea::Data {
+                            return Cell::new(rendered.black().on_gray());
+                        } else {
+                            return Cell::new(rendered.on_dark_gray());
+                        }
+                    }
+                    Cell::new(rendered)
+                })
+                .collect();
+
+            Row::new(c)
+        })
+        .collect();
+
+    let rows: Vec<Row> = rows_map.clone();
 
     // TODO: Once scrolling is implemented, filter this to only return those in the range...
     // also do that to the above statement.

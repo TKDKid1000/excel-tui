@@ -42,6 +42,6 @@ fn main() -> Result<()> {
 
     // println!("Result:");
     // println!("{:?}", eval_formula(formula, &spreadsheet).unwrap());
-    
+
     // Ok(())
 }

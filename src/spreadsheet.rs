@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::{Error, ErrorKind};
 
-use crate::formulas::{cell_to_token, Token };
+use crate::formulas::{cell_to_token, Token};
 
 #[derive(Debug)]
 pub struct SpreadsheetRowIteratorItem {
@@ -27,7 +27,7 @@ pub struct SpreadsheetRow {
 //     }
 // }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
 pub struct SpreadsheetCell {
     pub row: usize,
     pub col: usize,
@@ -100,7 +100,6 @@ impl Spreadsheet {
         if !self.in_spreadsheet(cell) {
             return "";
         }
-        // self.resize_to_cell(cell);
         return self.data[cell.row].contents[cell.col].as_str();
     }
 
