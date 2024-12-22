@@ -408,7 +408,7 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
     // let mut function_stack: Vec<Token> = Vec::new();
 
     for token in parsed.iter() {
-        println!("{:?} {:?}", token.token_type, token.content.clone());
+        // println!("{:?} {:?}", token.token_type, token.content.clone());
         match token.token_type {
             TokenType::LeftParen => {
                 operator_stack.push(token.clone());
@@ -482,28 +482,20 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
             }
         }
 
-        println!(
-            "Output {:?}",
-            output_queue
-                .iter()
-                .map(|t| t.content.clone())
-                .collect::<Vec<String>>()
-        );
-        println!(
-            "Operators {:?}",
-            operator_stack
-                .iter()
-                .map(|t| t.content.clone())
-                .collect::<Vec<String>>()
-        );
         // println!(
-        //     "Functions {:?}",
-        //     function_stack
+        //     "Output {:?}",
+        //     output_queue
         //         .iter()
         //         .map(|t| t.content.clone())
         //         .collect::<Vec<String>>()
         // );
-        println!();
+        // println!(
+        //     "Operators {:?}",
+        //     operator_stack
+        //         .iter()
+        //         .map(|t| t.content.clone())
+        //         .collect::<Vec<String>>()
+        // );
     }
 
     while operator_stack.len() > 0 {
@@ -525,14 +517,13 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
         .cloned()
         .collect();
 
-    // println!("{:#?}", output_queue);
-    println!(
-        "{:?}",
-        output_queue
-            .iter()
-            .map(|t| t.content.clone())
-            .collect::<Vec<String>>()
-    );
+    // println!(
+    //     "{:?}",
+    //     output_queue
+    //         .iter()
+    //         .map(|t| t.content.clone())
+    //         .collect::<Vec<String>>()
+    // );
 
     let mut eval_stack: Vec<Token> = Vec::new();
     for token in output_queue.iter() {
@@ -624,14 +615,6 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
                         args.push(eval_stack.pop().unwrap());
                     }
                     args.reverse(); // Makes writing the functions a hell of a lot easier
-                    println!(
-                        "Calling {} with {:?}",
-                        token.content,
-                        args.clone()
-                            .iter()
-                            .map(|t| t.content.clone())
-                            .collect::<Vec<String>>()
-                    );
                     if let Ok(result) = func.call(args.as_slice(), spreadsheet) {
                         // println!("Result of function {}: {:?}", token.content, result);
                         eval_stack.extend(result);
