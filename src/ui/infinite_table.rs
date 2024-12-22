@@ -89,7 +89,7 @@ pub fn infinite_table<'a>(
     formula_cache: &'a mut HashMap<SpreadsheetCell, String>,
 ) -> Table<'a> {
     spreadsheet.resize_to_cell(active_cell); // TODO: Remove this once selecting and quick cell jumping added
-    let rows_map: Vec<Row> = spreadsheet
+    let rows: Vec<Row> = spreadsheet
         .iter_rows()
         .enumerate()
         .map(|(y, r)| {
@@ -123,7 +123,6 @@ pub fn infinite_table<'a>(
         })
         .collect();
 
-    let rows: Vec<Row> = rows_map.clone();
 
     // TODO: Once scrolling is implemented, filter this to only return those in the range...
     // also do that to the above statement.

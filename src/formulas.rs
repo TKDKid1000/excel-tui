@@ -9,7 +9,7 @@ const OPERATORS: [&'static str; 19] = [
     " ",
 ];
 
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Default, Eq)]
 pub enum TokenType {
     // TODO: Implement the commented out tokens
     //
@@ -26,7 +26,7 @@ pub enum TokenType {
     RightParen,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Token {
     pub token_type: TokenType,
     pub content: String,
@@ -207,14 +207,14 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
         } else if current_char == '(' {
             // Parse left parentheses
 
-            parsed.push(Token::new(TokenType::LeftParen, String::new()));
+            parsed.push(Token::new(TokenType::LeftParen, String::from("(")));
         } else if current_char == ')' {
             // Parse right parentheses
 
             if func_close_parens.contains(&parse_idx) {
-                parsed.push(Token::new(TokenType::FuncClose, String::new()));
+                parsed.push(Token::new(TokenType::FuncClose, String::from("F)")));
             } else {
-                parsed.push(Token::new(TokenType::RightParen, String::new()));
+                parsed.push(Token::new(TokenType::RightParen, String::from(")")));
             }
         } else if current_char == '"' {
             // Parse string
@@ -405,9 +405,10 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
     // TODO: Support for non-numbers
     let mut output_queue: Vec<Token> = Vec::new();
     let mut operator_stack: Vec<Token> = Vec::new();
-    let mut function_stack: Vec<Token> = Vec::new();
+    // let mut function_stack: Vec<Token> = Vec::new();
 
     for token in parsed.iter() {
+        println!("{:?} {:?}", token.token_type, token.content.clone());
         match token.token_type {
             TokenType::LeftParen => {
                 operator_stack.push(token.clone());
@@ -415,37 +416,44 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
             TokenType::RightParen => {
                 // TODO: When if-let chains are implemented, make this an if-let expression
                 while let Some(x) = operator_stack.pop() {
-                    if x.token_type != TokenType::LeftParen || x.token_type != TokenType::Function {
+                    if x.token_type != TokenType::LeftParen
+                        && x.token_type != TokenType::Function
+                        && x.token_type != TokenType::FuncArgSep
+                    {
+                        println!("{:?}", x.token_type);
                         output_queue.push(x);
                     } else {
+                        operator_stack.push(x);
                         break;
                     }
                 }
             }
             TokenType::Function => {
-                function_stack.push(token.clone());
+                operator_stack.push(token.clone());
             }
             TokenType::FuncClose => {
                 while let Some(x) = operator_stack.pop() {
                     if x.token_type != TokenType::LeftParen
-                        || x.token_type != TokenType::Function
-                        || x.token_type != TokenType::FuncArgSep
+                        && x.token_type != TokenType::Function
+                        && x.token_type != TokenType::FuncArgSep
                     {
                         output_queue.push(x);
                     } else {
+                        operator_stack.push(x);
                         break;
                     }
                 }
-                output_queue.push(function_stack.pop().unwrap());
+                output_queue.push(operator_stack.pop().unwrap());
             }
             TokenType::FuncArgSep => {
                 while let Some(x) = operator_stack.pop() {
                     if x.token_type != TokenType::LeftParen
-                        || x.token_type != TokenType::Function
-                        || x.token_type != TokenType::FuncArgSep
+                        && x.token_type != TokenType::Function
+                        && x.token_type != TokenType::FuncArgSep
                     {
                         output_queue.push(x);
                     } else {
+                        operator_stack.push(x);
                         break;
                     }
                 }
@@ -473,6 +481,29 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
                 output_queue.push(token.clone());
             }
         }
+
+        println!(
+            "Output {:?}",
+            output_queue
+                .iter()
+                .map(|t| t.content.clone())
+                .collect::<Vec<String>>()
+        );
+        println!(
+            "Operators {:?}",
+            operator_stack
+                .iter()
+                .map(|t| t.content.clone())
+                .collect::<Vec<String>>()
+        );
+        // println!(
+        //     "Functions {:?}",
+        //     function_stack
+        //         .iter()
+        //         .map(|t| t.content.clone())
+        //         .collect::<Vec<String>>()
+        // );
+        println!();
     }
 
     while operator_stack.len() > 0 {
@@ -480,6 +511,28 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
             output_queue.push(popped);
         }
     }
+
+    output_queue = output_queue
+        .iter()
+        .filter(|t| {
+            !([
+                TokenType::LeftParen,
+                TokenType::FuncClose,
+                TokenType::FuncArgSep,
+            ])
+            .contains(&t.token_type)
+        })
+        .cloned()
+        .collect();
+
+    // println!("{:#?}", output_queue);
+    println!(
+        "{:?}",
+        output_queue
+            .iter()
+            .map(|t| t.content.clone())
+            .collect::<Vec<String>>()
+    );
 
     let mut eval_stack: Vec<Token> = Vec::new();
     for token in output_queue.iter() {
@@ -571,6 +624,14 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
                         args.push(eval_stack.pop().unwrap());
                     }
                     args.reverse(); // Makes writing the functions a hell of a lot easier
+                    println!(
+                        "Calling {} with {:?}",
+                        token.content,
+                        args.clone()
+                            .iter()
+                            .map(|t| t.content.clone())
+                            .collect::<Vec<String>>()
+                    );
                     if let Ok(result) = func.call(args.as_slice(), spreadsheet) {
                         // println!("Result of function {}: {:?}", token.content, result);
                         eval_stack.extend(result);

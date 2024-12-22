@@ -14,6 +14,7 @@ pub fn get_funcs() -> &'static HashMap<&'static str, &'static (dyn FormulaFuncti
         m.insert("IF", &If {});
         m.insert("PI", &Pi {});
         m.insert("RAND", &Rand {});
+        m.insert("MEAN", &Mean {});
         m
     })
 }
@@ -119,5 +120,40 @@ impl FormulaFunction for Rand {
             TokenType::Number,
             rand::random::<f64>().to_string(),
         )]);
+    }
+}
+
+struct Mean;
+impl FormulaFunction for Mean {
+    fn call(&self, args: &[Token], spreadsheet: &Spreadsheet) -> Result<Vec<Token>, ()> {
+        let mut nums: Vec<f32> = Vec::new();
+        for arg in args {
+            if arg.is_number(spreadsheet) {
+                nums.push(arg.as_f32(spreadsheet));
+            }
+            if let Some(ref_set) = &arg.reference_set {
+                let mut referennced_nums: Vec<f32> = ref_set
+                    .iter()
+                    .filter(|r| {
+                        spreadsheet
+                            .get_cell_value(&r.get_cell())
+                            .unwrap()
+                            .is_number(spreadsheet)
+                    })
+                    .map(|r| {
+                        spreadsheet
+                            .get_cell_value(&r.get_cell())
+                            .unwrap()
+                            .as_f32(spreadsheet)
+                    })
+                    .collect();
+
+                nums.append(&mut referennced_nums);
+            }
+        }
+        Ok(vec![Token::new(
+            TokenType::Number,
+            (nums.iter().sum::<f32>() / nums.len() as f32).to_string(),
+        )])
     }
 }

@@ -6,6 +6,10 @@ Replicating most of Excel's functionality in a simple terminal app.
 
 In theory, all Excel formulas should function in this TUI as well.
 
+### Function RPN Expectations
+
+- `MEAN(1,2,3)+MEAN(4,5,6)` -> `1 2 3 MEAN 4 5 6 MEAN +`
+
 ## To Do
 
 - [ ] Menu bar
@@ -20,6 +24,7 @@ In theory, all Excel formulas should function in this TUI as well.
 - [ ] Undo and redo
 - [ ] Mouse support
 - [ ] Multi-sheet spreadsheets and XLSX support
+- [ ] Theming and changing the color scheme
 - [ ] A dozen other things
 
 ## Specifications
