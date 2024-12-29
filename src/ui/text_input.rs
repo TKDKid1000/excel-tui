@@ -1,30 +1,52 @@
+use std::{fmt::format, time::{Duration, Instant}};
+
 use ratatui::{
+    buffer::Buffer,
     crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    layout::{Position, Rect},
     style::Stylize,
     text::{Line, Span},
+    widgets::StatefulWidget,
 };
 
+const DOUBLE_CLICK_DURATION: Duration = Duration::from_millis(500);
+const TRIPLE_CLICK_DURATION: Duration = Duration::from_millis(750);
+
 // Simple, single-line text input box
+#[derive(Default)]
+pub struct TextInput {}
+
 #[derive(Debug, Default, Clone)]
-pub struct TextInput {
-    value: String,
-    selection: [usize; 2],
+pub struct TextInputState {
+    pub value: String,
+    pub selection: [usize; 2],
+    area: Rect,
+    last_click: Option<Instant>
 }
 
-impl TextInput {
-    pub fn render(&self) -> Line {
-        if self.selection[0] == self.selection[1] {
-            return Line::from(self.value.clone()).reset_style();
+impl StatefulWidget for TextInput {
+    type State = TextInputState;
+
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State)
+    where
+        Self: Sized,
+    {
+        let line: Line;
+        if state.selection[0] == state.selection[1] {
+            line = Line::from(state.value.clone()).reset_style();
+        } else {
+            let before_sel = Span::from(state.value[..state.sel_min()].to_string());
+            let sel =
+                Span::from(state.value[state.sel_min()..state.sel_max()].to_string()).on_dark_gray();
+            let after_sel = Span::from(state.value[state.sel_max()..].to_string());
+            line = Line::from(vec![before_sel, sel, after_sel]);
         }
-
-        let before_sel = Span::from(self.value[..self.sel_min()].to_string());
-        let sel =
-            Span::from(self.value[self.sel_min()..self.sel_max()].to_string()).on_light_blue();
-        let after_sel = Span::from(self.value[self.sel_max()..].to_string());
-
-        return Line::from(vec![before_sel, sel, after_sel]);
+        buf.set_line(area.top(), area.left(), &line, u16::MAX);
+        state.area = area.clone();
     }
+}
 
+impl TextInputState {
     pub fn handle_event(&mut self, event: &Event) {
         match event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
@@ -79,8 +101,34 @@ impl TextInput {
                 }
             }
             Event::Mouse(mouse_event) => match mouse_event.kind {
-                event::MouseEventKind::Down(_) => {
+                event::MouseEventKind::Down(_)
+                    if self.area.contains(Position {
+                        x: mouse_event.column,
+                        y: mouse_event.row,
+                    }) =>
+                {
                     // TODO: Handle other mouse buttons, if they even do anything.
+
+                    // Handle single clicks
+                    let input_x = mouse_event.column - self.area.x;
+                    if self.value.len() < input_x.into() {
+                        self.set_cursor(self.value.len());
+                    } else {
+                        self.set_cursor(input_x.into());
+                    }
+                }
+                event::MouseEventKind::Drag(_)
+                    if self.area.contains(Position {
+                        x: mouse_event.column,
+                        y: mouse_event.row,
+                    }) =>
+                {
+                    let input_x = mouse_event.column - self.area.x;
+                    if self.value.len() < input_x.into() {
+                        self.selection[1] = self.value.len()
+                    } else {
+                        self.selection[1] = input_x.into()
+                    }
                 }
                 _ => (),
             },
