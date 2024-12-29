@@ -27,6 +27,12 @@ In theory, all Excel formulas should function in this TUI as well.
 - [ ] Theming and changing the color scheme
 - [ ] A dozen other things
 
+## Known Issues
+
+*Not missing features, but issues/caveats.*
+
+- Horizontal scrolling through the touchpad is only supported on some terminals.
+
 ## Specifications
 
 These are the specs of Excel that eventually need to be met:

@@ -35,7 +35,7 @@ impl Reference {
         if self.row.is_some() && self.col.is_some() {
             return format!(
                 "({},{})",
-                Reference::index_to_alpha(self.col.unwrap() as u32 + 1).unwrap(),
+                Reference::index_to_alpha(self.col.unwrap() as u32 + 1),
                 self.row.unwrap() + 1
             );
         }
@@ -64,7 +64,7 @@ impl Reference {
         Some(index)
     }
 
-    pub fn index_to_alpha(index: u32) -> Option<String> {
+    pub fn index_to_alpha(index: u32) -> String {
         // Converts a 1-indexed number into an Excel alphabetized column id (A, BC, XFD, etc.)
         let mut index_mut = index.clone();
         let mut letters = vec![];
@@ -75,14 +75,12 @@ impl Reference {
             index_mut /= 26;
         }
 
-        Some(
-            letters
-                .iter()
-                .rev()
-                .map(|c| char::from_u32(*c).unwrap().to_string())
-                .collect::<Vec<String>>()
-                .join(""),
-        )
+        letters
+            .iter()
+            .rev()
+            .map(|c| char::from_u32(*c).unwrap().to_string())
+            .collect::<Vec<String>>()
+            .join("")
     }
 
     pub fn get_cell(&self) -> SpreadsheetCell {

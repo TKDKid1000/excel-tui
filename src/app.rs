@@ -21,7 +21,7 @@ use ratatui::{
 use crate::{
     spreadsheet::{Spreadsheet, SpreadsheetCell, SPREADSHEET_MAX_COLS, SPREADSHEET_MAX_ROWS},
     ui::{
-        infinite_table::infinite_table,
+        infinite_table::{infinite_table, InfiniteTable, InfiniteTableState},
         text_input::{TextInput, TextInputState},
     },
 };
@@ -54,16 +54,11 @@ pub enum AppArea {
 #[derive(Debug, Default, Clone)]
 pub struct App {
     pub spreadsheet: Spreadsheet,
-    pub active_cell: SpreadsheetCell,
     pub focused_area: AppArea,
     pub formula_cache: HashMap<SpreadsheetCell, String>,
 
     pub editor_state: TextInputState,
-
-    pub vertical_scroll_state: ScrollbarState,
-    pub horizontal_scroll_state: ScrollbarState,
-    pub vertical_scroll_pos: usize,
-    pub horizontal_scroll_pos: usize,
+    pub infinite_table_state: InfiniteTableState,
 
     exit: bool,
 }
@@ -84,8 +79,11 @@ impl App {
                 y: 0,
             });
         } else {
-            self.editor_state
-                .set_value(self.spreadsheet.get_cell(&self.active_cell).to_string());
+            self.editor_state.set_value(
+                self.spreadsheet
+                    .get_cell(&self.infinite_table_state.active_cell)
+                    .to_string(),
+            );
             // Needed so that cursor position doesn't persist and show text selection when unfocused.
             self.editor_state.set_cursor(0);
         }
@@ -96,14 +94,23 @@ impl App {
             .split(frame.area());
 
         frame.render_stateful_widget(TextInput::default(), main_layout[0], &mut self.editor_state);
-        frame.render_widget(
-            infinite_table(
-                &mut self.spreadsheet,
-                &self.active_cell,
-                &self.focused_area,
-                &mut self.formula_cache,
-            ),
+        // frame.render_widget(
+        //     infinite_table(
+        //         &mut self.spreadsheet,
+        //         &self.infinite_table_state.active_cell,
+        //         &self.focused_area,
+        //         &mut self.formula_cache,
+        //     ),
+        //     main_layout[1],
+        // );
+        frame.render_stateful_widget(
+            InfiniteTable {
+                is_focused: self.focused_area == AppArea::Data,
+                col_widths: self.spreadsheet.col_widths.clone(),
+                col_space: 1
+            },
             main_layout[1],
+            &mut self.infinite_table_state,
         );
     }
 
@@ -132,28 +139,29 @@ impl App {
     }
 
     fn handle_data_event(&mut self, event: &Event) {
+        self.infinite_table_state.handle_event(event);
         match event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 match key_event.code {
                     // Cell movement
                     KeyCode::Right => {
-                        if self.active_cell.col < SPREADSHEET_MAX_COLS {
-                            self.active_cell.col += 1
+                        if self.infinite_table_state.active_cell.col < SPREADSHEET_MAX_COLS {
+                            self.infinite_table_state.active_cell.col += 1
                         }
                     }
                     KeyCode::Left => {
-                        if self.active_cell.col > 0 {
-                            self.active_cell.col -= 1
+                        if self.infinite_table_state.active_cell.col > 0 {
+                            self.infinite_table_state.active_cell.col -= 1
                         }
                     }
                     KeyCode::Down => {
-                        if self.active_cell.row < SPREADSHEET_MAX_ROWS {
-                            self.active_cell.row += 1
+                        if self.infinite_table_state.active_cell.row < SPREADSHEET_MAX_ROWS {
+                            self.infinite_table_state.active_cell.row += 1
                         }
                     }
                     KeyCode::Up => {
-                        if self.active_cell.row > 0 {
-                            self.active_cell.row -= 1
+                        if self.infinite_table_state.active_cell.row > 0 {
+                            self.infinite_table_state.active_cell.row -= 1
                         }
                     }
 
@@ -161,35 +169,39 @@ impl App {
                     // TODO: Add the feature where tab and enter go to the start of the next thing, like excel
                     KeyCode::Enter => {
                         if key_event.modifiers.contains(KeyModifiers::SHIFT)
-                            && self.active_cell.row > 0
+                            && self.infinite_table_state.active_cell.row > 0
                         {
-                            self.active_cell.row -= 1
-                        } else if self.active_cell.row < SPREADSHEET_MAX_ROWS {
-                            self.active_cell.row += 1
+                            self.infinite_table_state.active_cell.row -= 1
+                        } else if self.infinite_table_state.active_cell.row < SPREADSHEET_MAX_ROWS {
+                            self.infinite_table_state.active_cell.row += 1
                         }
                     }
                     KeyCode::Tab => {
-                        if self.active_cell.col < SPREADSHEET_MAX_COLS {
-                            self.active_cell.col += 1
+                        if self.infinite_table_state.active_cell.col < SPREADSHEET_MAX_COLS {
+                            self.infinite_table_state.active_cell.col += 1
                         }
                     }
                     KeyCode::BackTab => {
-                        if self.active_cell.col > 0 {
-                            self.active_cell.col -= 1
+                        if self.infinite_table_state.active_cell.col > 0 {
+                            self.infinite_table_state.active_cell.col -= 1
                         }
                     }
 
                     // Resizing (temporary)
                     KeyCode::Char('+') => {
                         self.spreadsheet.set_col_width(
-                            &self.active_cell,
-                            self.spreadsheet.get_col_width(&self.active_cell) + 1,
+                            &self.infinite_table_state.active_cell,
+                            self.spreadsheet
+                                .get_col_width(&self.infinite_table_state.active_cell)
+                                + 1,
                         );
                     }
                     KeyCode::Char('-') => {
                         self.spreadsheet.set_col_width(
-                            &self.active_cell,
-                            self.spreadsheet.get_col_width(&self.active_cell) - 1,
+                            &self.infinite_table_state.active_cell,
+                            self.spreadsheet
+                                .get_col_width(&self.infinite_table_state.active_cell)
+                                - 1,
                         );
                     }
 
@@ -206,7 +218,8 @@ impl App {
                             .set_cursor(self.editor_state.value().len());
                     }
                     KeyCode::Backspace | KeyCode::Delete => {
-                        self.spreadsheet.set_cell(&self.active_cell, "");
+                        self.spreadsheet
+                            .set_cell(&self.infinite_table_state.active_cell, "");
                         self.formula_cache.clear();
                     }
 
@@ -227,24 +240,29 @@ impl App {
             Event::Key(key_event) => match key_event.code {
                 KeyCode::Enter => {
                     self.focused_area = AppArea::Data;
-                    self.spreadsheet
-                        .set_cell(&self.active_cell, &self.editor_state.value());
+                    self.spreadsheet.set_cell(
+                        &self.infinite_table_state.active_cell,
+                        &self.editor_state.value(),
+                    );
                     self.formula_cache.clear();
 
-                    if self.spreadsheet.get_col_width(&self.active_cell)
+                    if self
+                        .spreadsheet
+                        .get_col_width(&self.infinite_table_state.active_cell)
                         < self.editor_state.value().len() as u16
                     {
                         self.spreadsheet.set_col_width(
-                            &self.active_cell,
+                            &self.infinite_table_state.active_cell,
                             self.editor_state.value().len() as u16,
                         );
                     }
 
-                    if key_event.modifiers.contains(KeyModifiers::SHIFT) && self.active_cell.row > 0
+                    if key_event.modifiers.contains(KeyModifiers::SHIFT)
+                        && self.infinite_table_state.active_cell.row > 0
                     {
-                        self.active_cell.row -= 1
-                    } else if self.active_cell.row < SPREADSHEET_MAX_ROWS {
-                        self.active_cell.row += 1
+                        self.infinite_table_state.active_cell.row -= 1
+                    } else if self.infinite_table_state.active_cell.row < SPREADSHEET_MAX_ROWS {
+                        self.infinite_table_state.active_cell.row += 1
                     }
                 }
                 KeyCode::Esc => self.focused_area = AppArea::Data,

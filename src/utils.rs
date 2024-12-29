@@ -37,3 +37,49 @@ where
         return result;
     }
 }
+
+pub trait StringPadding {
+    fn left_pad(&self, length: usize, pad_char: char) -> String;
+    fn right_pad(&self, length: usize, pad_char: char) -> String;
+    fn center(&self, length: usize, pad_char: char) -> String;
+}
+
+impl StringPadding for String {
+    fn left_pad(&self, length: usize, pad_char: char) -> String {
+        if self.len() >= length {
+            return self.clone();
+        }
+        let mut working = self.clone();
+        while working.len() < length {
+            working.insert(0, pad_char);
+        }
+        working
+    }
+
+    fn right_pad(&self, length: usize, pad_char: char) -> String {
+        if self.len() >= length {
+            return self.clone();
+        }
+        let mut working = self.clone();
+        while working.len() < length {
+            working.push(pad_char);
+        }
+        working
+    }
+
+    fn center(&self, length: usize, pad_char: char) -> String {
+        if self.len() >= length {
+            return self.clone();
+        }
+        let mut working = self.clone();
+        while working.len() < length {
+            // Alternate adding to the start and the end
+            if working.len() % 2 == 0 {
+                working.insert(0, pad_char);
+            } else {
+                working.push(pad_char);
+            }
+        }
+        working
+    }
+}

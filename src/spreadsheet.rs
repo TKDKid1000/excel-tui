@@ -33,8 +33,8 @@ pub struct SpreadsheetCell {
     pub col: usize,
 }
 
-pub const SPREADSHEET_MAX_ROWS: usize = 2 ^ 20;
-pub const SPREADSHEET_MAX_COLS: usize = 2 ^ 14;
+pub const SPREADSHEET_MAX_ROWS: usize = 2usize.pow(20);
+pub const SPREADSHEET_MAX_COLS: usize = 2usize.pow(14);
 pub const DEFAULT_COL_WIDTH: u16 = 10;
 
 #[derive(Debug, Default, Clone)]
@@ -76,7 +76,7 @@ impl Spreadsheet {
 
         return Ok(Spreadsheet {
             data: parsed,
-            col_widths: vec![DEFAULT_COL_WIDTH; max_cols],
+            col_widths: vec![DEFAULT_COL_WIDTH; SPREADSHEET_MAX_COLS],
             row_heights: Vec::new(),
         });
     }

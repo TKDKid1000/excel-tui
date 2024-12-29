@@ -15,6 +15,7 @@ pub fn get_funcs() -> &'static HashMap<&'static str, &'static (dyn FormulaFuncti
         m.insert("PI", &Pi {});
         m.insert("RAND", &Rand {});
         m.insert("MEAN", &Mean {});
+        m.insert("MEDIAN", &Median {});
         m
     })
 }
@@ -36,7 +37,7 @@ impl FormulaFunction for Sum {
                 nums.push(arg.as_f32(spreadsheet));
             }
             if let Some(ref_set) = &arg.reference_set {
-                let mut referennced_nums: Vec<f32> = ref_set
+                let mut referenced_nums: Vec<f32> = ref_set
                     .iter()
                     .filter(|r| {
                         spreadsheet
@@ -52,7 +53,7 @@ impl FormulaFunction for Sum {
                     })
                     .collect();
 
-                nums.append(&mut referennced_nums);
+                nums.append(&mut referenced_nums);
             }
         }
         Ok(vec![Token::new(
@@ -132,7 +133,7 @@ impl FormulaFunction for Mean {
                 nums.push(arg.as_f32(spreadsheet));
             }
             if let Some(ref_set) = &arg.reference_set {
-                let mut referennced_nums: Vec<f32> = ref_set
+                let mut referenced_nums: Vec<f32> = ref_set
                     .iter()
                     .filter(|r| {
                         spreadsheet
@@ -148,12 +149,59 @@ impl FormulaFunction for Mean {
                     })
                     .collect();
 
-                nums.append(&mut referennced_nums);
+                nums.append(&mut referenced_nums);
             }
         }
         Ok(vec![Token::new(
             TokenType::Number,
             (nums.iter().sum::<f32>() / nums.len() as f32).to_string(),
         )])
+    }
+}
+
+struct Median;
+impl FormulaFunction for Median {
+    fn call(&self, args: &[Token], spreadsheet: &Spreadsheet) -> Result<Vec<Token>, ()> {
+        let mut nums: Vec<f32> = Vec::new();
+        for arg in args {
+            if arg.is_number(spreadsheet) {
+                nums.push(arg.as_f32(spreadsheet));
+            }
+            if let Some(ref_set) = &arg.reference_set {
+                let mut referenced_nums: Vec<f32> = ref_set
+                    .iter()
+                    .filter(|r| {
+                        spreadsheet
+                            .get_cell_value(&r.get_cell())
+                            .unwrap()
+                            .is_number(spreadsheet)
+                    })
+                    .map(|r| {
+                        spreadsheet
+                            .get_cell_value(&r.get_cell())
+                            .unwrap()
+                            .as_f32(spreadsheet)
+                    })
+                    .collect();
+
+                nums.append(&mut referenced_nums);
+            }
+        }
+        nums.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let middle = match nums.len() % 2 {
+            1 => {
+                // Odd number of elements
+                nums[nums.len() / 2]
+            }
+            0 => {
+                // Even number of elements
+                (nums[nums.len() / 2] + nums[nums.len() / 2 - 1]) / 2f32
+            }
+            _ => {
+                // Never reached
+                0f32
+            }
+        };
+        Ok(vec![Token::new(TokenType::Number, middle.to_string())])
     }
 }
