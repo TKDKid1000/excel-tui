@@ -3,15 +3,14 @@ use std::{cmp::min, collections::HashMap};
 use ratatui::{
     buffer::Buffer,
     crossterm::event::{Event, MouseEventKind},
-    layout::{Constraint, Rect},
-    style::{Style, Stylize},
-    widgets::{Block, Cell, Row, StatefulWidget, Table},
+    layout::{Position, Rect},
+    style::{Color, Style},
+    widgets::StatefulWidget,
 };
 
 use crate::{
-    app::AppArea,
     references::Reference,
-    spreadsheet::{Spreadsheet, SpreadsheetCell, SPREADSHEET_MAX_COLS},
+    spreadsheet::{Spreadsheet, SpreadsheetCell, SPREADSHEET_MAX_COLS, SPREADSHEET_MAX_ROWS},
     utils::StringPadding,
 };
 
@@ -61,38 +60,50 @@ fn render_cell(
         .right_pad(max_length, ' ')
 }
 
-pub struct InfiniteTable {
+pub struct InfiniteTable<'a> {
     pub is_focused: bool,
     pub col_widths: Vec<u16>,
     pub col_space: u16,
+    pub spreadsheet: &'a Spreadsheet,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct InfiniteTableState {
     pub active_cell: SpreadsheetCell,
-    vertical_scroll: u16,
+    vertical_scroll: u32,
     horizontal_scroll: u16,
+    pub formula_cache: HashMap<SpreadsheetCell, String>,
+
+    visible_rows: [u32; 2],
+    visible_cols: [u16; 2],
+    cells: HashMap<SpreadsheetCell, Rect>,
+
+    col_edges: [u16; 2],
+
+    area: Rect,
 }
 
-impl StatefulWidget for InfiniteTable {
-    type State = InfiniteTableState;
-
-    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State)
-    where
+impl<'a> InfiniteTable<'a> {
+    fn render_headers(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        state: &mut <InfiniteTable as StatefulWidget>::State,
+        row_header_width: u16,
+        row_header_gap: u16,
+    ) where
         Self: Sized,
     {
         // NOTE TO SELF: There is very likely an issue where this will render into other cells that it shouldn't.
         // This will be addressed eventually.
 
-        let row_header_width = 3;
-
         let mut render_x = 0;
-        for col in 1..area.width {
+        for col in 0..area.width {
             let col_width = self.col_widths[col as usize] as i16;
             // Max renderable cols is the terminal width
-            let start_x = area.x as i16 + render_x as i16 - state.horizontal_scroll as i16;
+            let start_x = render_x as i16 - state.horizontal_scroll as i16;
 
-            let text = Reference::index_to_alpha(col as u32)
+            let text = Reference::index_to_alpha(col as u32 + 1)
                 .to_string()
                 .center(col_width as usize, ' ');
 
@@ -100,14 +111,19 @@ impl StatefulWidget for InfiniteTable {
                 // Eventually, trim the text to fit it when it's only partially visible.
                 if start_x > 0 {
                     buf.set_string(
-                        start_x as u16 + row_header_width,
+                        start_x as u16 + row_header_width + row_header_gap + area.x,
                         area.y,
                         text,
                         Style::new(),
                     );
                 } else {
                     let sliced_text = text[start_x.unsigned_abs() as usize..].to_string();
-                    buf.set_string(row_header_width, area.y, sliced_text, Style::new());
+                    buf.set_string(
+                        row_header_width + row_header_gap + area.x,
+                        area.y,
+                        sliced_text,
+                        Style::new(),
+                    );
                 }
             }
             render_x += col_width + self.col_space as i16;
@@ -118,127 +134,217 @@ impl StatefulWidget for InfiniteTable {
             buf.set_string(
                 area.x,
                 area.y + row,
-                (row + state.vertical_scroll)
+                (row as u32 + state.vertical_scroll)
                     .to_string()
                     .center(row_header_width as usize, ' '),
                 Style::new(),
             );
         }
+    }
 
-        buf.set_string(
-            area.x + 3,
-            area.y + 1,
-            format!(
-                "Widths: {}, V Scroll: {}, H Scroll: {}",
-                self.col_widths.len(),
-                state.vertical_scroll,
-                state.horizontal_scroll
-            ),
-            Style::new(),
+    fn render_data(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        state: &mut <InfiniteTable as StatefulWidget>::State,
+    ) where
+        Self: Sized,
+    {
+        state.visible_rows = [
+            state.vertical_scroll as u32,
+            state.vertical_scroll + area.height as u32,
+        ];
+        state.visible_cols = [0, 0];
+        state.cells.clear();
+
+        // NOTE TO SELF: There is very likely an issue where this will render into other cells that it shouldn't.
+        // This will be addressed eventually.
+
+        // TODO: Row height, once implemented
+        for row in 0..area.height {
+            let mut render_x = 0;
+            for col in 0..area.width {
+                let col_width = self.col_widths[col as usize] as i16;
+                // Max renderable cols is the terminal width
+                let start_x = render_x as i16 - state.horizontal_scroll as i16;
+
+                let cell = SpreadsheetCell {
+                    row: (row as u32 + state.vertical_scroll) as usize,
+                    col: col.into(),
+                };
+                let text = render_cell(
+                    &cell,
+                    col_width as usize,
+                    2,
+                    &self.spreadsheet,
+                    &mut state.formula_cache,
+                );
+
+                let mut cell_style = Style::new();
+                if state.active_cell == cell {
+                    cell_style = cell_style.bg(Color::White).fg(Color::Black);
+                    if !self.is_focused {
+                        cell_style = cell_style.bg(Color::Gray);
+                    }
+                }
+
+                if start_x > area.width as i16 {
+                    state.visible_cols[1] = col - 1;
+                    break;
+                }
+
+                if start_x as i16 >= -(text.len() as i16) {
+                    // Eventually, trim the text to fit it when it's only partially visible.
+                    if start_x as i16 > 0 {
+                        buf.set_string(start_x as u16 + area.x, area.y + row, text, cell_style);
+                        state.cells.insert(
+                            cell,
+                            Rect {
+                                x: start_x as u16 + area.x,
+                                y: area.y + row,
+                                width: col_width as u16,
+                                height: 1, // TODO: Row heights, once again
+                            },
+                        );
+                    } else {
+                        state.visible_cols[0] = col;
+                        let sliced_text = text[start_x.unsigned_abs() as usize..].to_string();
+                        buf.set_string(area.x, area.y + row, sliced_text, cell_style);
+                        state.cells.insert(
+                            cell,
+                            Rect {
+                                x: area.x,
+                                y: area.y + row,
+                                width: col_width as u16,
+                                height: 1, // TODO: Row heights, once again
+                            },
+                        );
+                    }
+                }
+                render_x += col_width + self.col_space as i16;
+            }
+        }
+
+        state.col_edges = [
+            if state.visible_cols[0] == 0 {
+                0
+            } else {
+                self.col_widths[1..state.visible_cols[0] as usize]
+                    .iter()
+                    .map(|c| c + self.col_space)
+                    .sum::<u16>()
+            },
+            self.col_widths[..=state.visible_cols[1] as usize + 1]
+                .iter()
+                .map(|c| c + self.col_space)
+                .sum::<u16>()
+                - area.width
+                - self.col_space,
+        ];
+
+        state.area = area;
+    }
+}
+
+impl<'a> StatefulWidget for InfiniteTable<'a> {
+    type State = InfiniteTableState;
+
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        let row_header_width = 3;
+        let row_header_gap = 1;
+
+        self.render_data(
+            Rect {
+                x: area.x + row_header_width + row_header_gap,
+                y: area.y + 1, // Constant, height of col header
+                width: area.width - row_header_width - row_header_gap,
+                height: area.height - 1, // Constant, height of col header
+            },
+            buf,
+            state,
         );
+        self.render_headers(area, buf, state, row_header_width, row_header_gap);
     }
 }
 
 impl InfiniteTableState {
     pub fn handle_event(&mut self, event: &Event) {
         match event {
-            Event::Mouse(mouse_event) => match mouse_event.kind {
-                MouseEventKind::ScrollDown => {
-                    self.vertical_scroll += 1;
-                }
-                MouseEventKind::ScrollUp => {
-                    if self.vertical_scroll >= 1 {
-                        self.vertical_scroll -= 1;
+            Event::Mouse(mouse_event)
+                if self.area.contains(Position {
+                    x: mouse_event.column,
+                    y: mouse_event.row,
+                }) =>
+            {
+                match mouse_event.kind {
+                    MouseEventKind::ScrollDown => {
+                        self.vertical_scroll += 1;
                     }
-                }
-                MouseEventKind::ScrollLeft => {
-                    self.horizontal_scroll += 1;
-                }
-                MouseEventKind::ScrollRight => {
-                    if self.horizontal_scroll >= 1 {
-                        self.horizontal_scroll -= 1;
+                    MouseEventKind::ScrollUp => {
+                        if self.vertical_scroll >= 1 {
+                            self.vertical_scroll -= 1;
+                        }
                     }
+                    MouseEventKind::ScrollLeft => {
+                        self.horizontal_scroll += 1;
+                    }
+                    MouseEventKind::ScrollRight => {
+                        if self.horizontal_scroll >= 1 {
+                            self.horizontal_scroll -= 1;
+                        }
+                    }
+                    MouseEventKind::Down(_) => {
+                        // TODO: Handle other mouse buttons (certainly needed here)
+
+                        for (cell, rect) in self.cells.iter() {
+                            if rect.contains(Position {
+                                x: mouse_event.column,
+                                y: mouse_event.row,
+                            }) {
+                                self.active_cell = cell.clone();
+                            }
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
-            },
+            }
             _ => (),
         }
     }
-}
 
-pub fn infinite_table<'a>(
-    spreadsheet: &'a mut Spreadsheet,
-    active_cell: &SpreadsheetCell,
-    focused_area: &AppArea,
-    formula_cache: &'a mut HashMap<SpreadsheetCell, String>,
-) -> Table<'a> {
-    spreadsheet.resize_to_cell(active_cell); // TODO: Remove this once selecting and quick cell jumping added
-    let mut rows: Vec<Row> = spreadsheet
-        .iter_rows()
-        .enumerate()
-        .map(|(y, r)| {
-            let mut c: Vec<Cell> = r
-                .contents
-                .iter()
-                .enumerate()
-                .map(|(idx, _)| {
-                    let cell = SpreadsheetCell { col: idx, row: y };
-                    let rendered: String;
-                    rendered = render_cell(
-                        &cell,
-                        spreadsheet.get_col_width(&cell) as usize,
-                        2,
-                        &spreadsheet,
-                        formula_cache,
-                    );
-
-                    if idx == active_cell.col && y == active_cell.row {
-                        if *focused_area == AppArea::Data {
-                            return Cell::new(rendered.black().on_gray());
-                        } else {
-                            return Cell::new(rendered.on_dark_gray());
-                        }
-                    }
-                    Cell::new(rendered)
-                })
-                .collect();
-
-            // TODO: Same fixed value that needs to change
-            let row_marker = (y + 1).to_string().center(3, ' ');
-            c.insert(0, Cell::new(row_marker.black().on_white()));
-            Row::new(c)
-        })
-        .collect();
-
-    // Still me saving memory. Again, scrolling, yada yada, all that jazz.
-    rows.insert(
-        0,
-        Row::new(vec![0; 5].iter().enumerate().map(|(idx, _)| {
-            if idx == 0 {
-                String::new().reset()
-            } else {
-                let length = spreadsheet.get_col_width(&SpreadsheetCell {
-                    col: idx - 1,
-                    row: 0,
-                }) as usize;
-                // Reference::index_to_alpha(idx as u32)
-                length.to_string().center(length, ' ').black().on_white()
+    pub fn move_active_cell(&mut self, x: i32, y: i32) {
+        let mut dx = x;
+        while dx > 0 && self.active_cell.col < SPREADSHEET_MAX_COLS {
+            self.active_cell.col += 1;
+            dx -= 1;
+            if self.visible_cols[1] < self.active_cell.col as u16 {
+                self.horizontal_scroll = self.col_edges[1];
             }
-        })),
-    );
+        }
+        while dx < 0 && self.active_cell.col > 0 {
+            self.active_cell.col -= 1;
+            dx += 1;
+            if self.visible_cols[0] > self.active_cell.col as u16 {
+                self.horizontal_scroll = self.col_edges[0];
+            }
+        }
 
-    // TODO: Once scrolling is implemented, filter this to only return those in the range...
-    // also do that to the above statement.
-    let mut widths: Vec<Constraint> = vec![0; /*SPREADSHEET_MAX_COLS*/ 20 /* (me saving memory) */]
-        .iter()
-        .enumerate()
-        .map(|(idx, _)| {
-            Constraint::Length(spreadsheet.get_col_width(&SpreadsheetCell { col: idx, row: 0 }))
-        })
-        .collect();
-    widths.insert(0, Constraint::Length(3)); // TODO: Dynamically update this depending on what's visible
-
-    return Table::new(rows, widths)
-        .column_spacing(1)
-        .style(Style::new().on_black().white());
+        let mut dy = y;
+        while dy > 0 && self.active_cell.row < SPREADSHEET_MAX_ROWS {
+            self.active_cell.row += 1;
+            dy -= 1;
+            if self.visible_rows[1] <= self.active_cell.row as u32 {
+                // TODO: Scroll by row height, once implemented.
+                self.vertical_scroll += 1;
+            }
+        }
+        while dy < 0 && self.active_cell.row > 0 {
+            self.active_cell.row -= 1;
+            dy += 1;
+            if self.visible_rows[0] > self.active_cell.row as u32 {
+                // TODO: Scroll by row height, once implemented.
+                self.vertical_scroll -= 1;
+            }
+        }
+    }
 }

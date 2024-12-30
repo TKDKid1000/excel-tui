@@ -70,8 +70,9 @@ impl Reference {
         let mut letters = vec![];
         while index_mut > 0 {
             // Same trick as before
-            letters.push('@' as u32 + index_mut % 26);
+            letters.push('A' as u32 + (index_mut - 1) % 26);
 
+            index_mut -= 1;
             index_mut /= 26;
         }
 

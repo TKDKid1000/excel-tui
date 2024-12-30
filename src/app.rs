@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    io::{stdout, Result, Stdout},
-};
+use std::io::{stdout, Result, Stdout};
 
 use ratatui::{
     backend::CrosstermBackend,
@@ -14,14 +11,13 @@ use ratatui::{
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     },
     layout::{Constraint, Direction, Layout, Position},
-    widgets::ScrollbarState,
     Frame, Terminal,
 };
 
 use crate::{
-    spreadsheet::{Spreadsheet, SpreadsheetCell, SPREADSHEET_MAX_COLS, SPREADSHEET_MAX_ROWS},
+    spreadsheet::{Spreadsheet, SPREADSHEET_MAX_COLS, SPREADSHEET_MAX_ROWS},
     ui::{
-        infinite_table::{infinite_table, InfiniteTable, InfiniteTableState},
+        infinite_table::{InfiniteTable, InfiniteTableState},
         text_input::{TextInput, TextInputState},
     },
 };
@@ -51,11 +47,10 @@ pub enum AppArea {
     CommandBar,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct App {
     pub spreadsheet: Spreadsheet,
     pub focused_area: AppArea,
-    pub formula_cache: HashMap<SpreadsheetCell, String>,
 
     pub editor_state: TextInputState,
     pub infinite_table_state: InfiniteTableState,
@@ -107,7 +102,8 @@ impl App {
             InfiniteTable {
                 is_focused: self.focused_area == AppArea::Data,
                 col_widths: self.spreadsheet.col_widths.clone(),
-                col_space: 1
+                col_space: 1,
+                spreadsheet: &self.spreadsheet,
             },
             main_layout[1],
             &mut self.infinite_table_state,
@@ -145,24 +141,16 @@ impl App {
                 match key_event.code {
                     // Cell movement
                     KeyCode::Right => {
-                        if self.infinite_table_state.active_cell.col < SPREADSHEET_MAX_COLS {
-                            self.infinite_table_state.active_cell.col += 1
-                        }
+                        self.infinite_table_state.move_active_cell(1, 0);
                     }
                     KeyCode::Left => {
-                        if self.infinite_table_state.active_cell.col > 0 {
-                            self.infinite_table_state.active_cell.col -= 1
-                        }
+                        self.infinite_table_state.move_active_cell(-1, 0);
                     }
                     KeyCode::Down => {
-                        if self.infinite_table_state.active_cell.row < SPREADSHEET_MAX_ROWS {
-                            self.infinite_table_state.active_cell.row += 1
-                        }
+                        self.infinite_table_state.move_active_cell(0, 1);
                     }
                     KeyCode::Up => {
-                        if self.infinite_table_state.active_cell.row > 0 {
-                            self.infinite_table_state.active_cell.row -= 1
-                        }
+                        self.infinite_table_state.move_active_cell(0, -1);
                     }
 
                     // Movement (enter/tab)
@@ -220,12 +208,12 @@ impl App {
                     KeyCode::Backspace | KeyCode::Delete => {
                         self.spreadsheet
                             .set_cell(&self.infinite_table_state.active_cell, "");
-                        self.formula_cache.clear();
+                        self.infinite_table_state.formula_cache.clear();
                     }
 
                     // Miscellanous
                     KeyCode::F(9) => {
-                        self.formula_cache.clear();
+                        self.infinite_table_state.formula_cache.clear();
                     }
                     _ => (),
                 }
@@ -244,7 +232,7 @@ impl App {
                         &self.infinite_table_state.active_cell,
                         &self.editor_state.value(),
                     );
-                    self.formula_cache.clear();
+                    self.infinite_table_state.formula_cache.clear();
 
                     if self
                         .spreadsheet

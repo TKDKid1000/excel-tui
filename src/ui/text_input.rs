@@ -1,4 +1,4 @@
-use std::{fmt::format, time::{Duration, Instant}};
+use std::time::{Duration, Instant};
 
 use ratatui::{
     buffer::Buffer,
@@ -21,7 +21,7 @@ pub struct TextInputState {
     pub value: String,
     pub selection: [usize; 2],
     area: Rect,
-    last_click: Option<Instant>
+    last_click: Option<Instant>,
 }
 
 impl StatefulWidget for TextInput {
@@ -36,8 +36,8 @@ impl StatefulWidget for TextInput {
             line = Line::from(state.value.clone()).reset_style();
         } else {
             let before_sel = Span::from(state.value[..state.sel_min()].to_string());
-            let sel =
-                Span::from(state.value[state.sel_min()..state.sel_max()].to_string()).on_dark_gray();
+            let sel = Span::from(state.value[state.sel_min()..state.sel_max()].to_string())
+                .on_dark_gray();
             let after_sel = Span::from(state.value[state.sel_max()..].to_string());
             line = Line::from(vec![before_sel, sel, after_sel]);
         }

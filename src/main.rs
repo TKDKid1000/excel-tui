@@ -1,8 +1,7 @@
 use std::env;
 use std::io::Result;
 
-use formulas::{eval_formula, parse_formula};
-use references::Reference;
+use formulas::eval_formula;
 use spreadsheet::Spreadsheet;
 
 mod app;

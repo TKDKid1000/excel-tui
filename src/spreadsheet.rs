@@ -17,7 +17,7 @@ pub struct SpreadsheetRow {
 
 // Unused, but keeping it for future reference.
 // impl SpreadsheetRow {
-//     pub fn iter_contents<'a>(&'a self) -> impl Iterator<Item = SpreadsheetRowIteratorItem> + 'a {
+//     pub fn iter_contents(&'a self) -> impl Iterator<Item = SpreadsheetRowIteratorItem> + 'a {
 //         self.contents.iter().enumerate().map(|(idx, value)| {
 //             return SpreadsheetRowIteratorItem {
 //                 idx,
@@ -37,12 +37,11 @@ pub const SPREADSHEET_MAX_ROWS: usize = 2usize.pow(20);
 pub const SPREADSHEET_MAX_COLS: usize = 2usize.pow(14);
 pub const DEFAULT_COL_WIDTH: u16 = 10;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct Spreadsheet {
     data: Vec<SpreadsheetRow>,
     pub col_widths: Vec<u16>,
-    row_heights: Vec<u16>, // pub n_rows: usize,
-                           // pub n_cols: usize,
+    row_heights: Vec<u16>,
 }
 
 impl Spreadsheet {
@@ -50,8 +49,7 @@ impl Spreadsheet {
         Self {
             data: Vec::new(),
             col_widths: Vec::new(),
-            row_heights: Vec::new(), // n_cols: 0,
-                                     // n_rows: 0,
+            row_heights: Vec::new(),
         }
     }
 
@@ -110,7 +108,7 @@ impl Spreadsheet {
 
     pub fn resize_to_cell(&mut self, cell: &SpreadsheetCell) {
         if cell.row >= self.data.len() {
-            self.data.resize(cell.row, SpreadsheetRow::default());
+            self.data.resize(cell.row + 1, SpreadsheetRow::default());
         }
         if cell.col >= self.data[cell.row].contents.len() {
             self.data[cell.row]
