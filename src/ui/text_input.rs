@@ -13,14 +13,14 @@ const DOUBLE_CLICK_DURATION: Duration = Duration::from_millis(500);
 const TRIPLE_CLICK_DURATION: Duration = Duration::from_millis(750);
 
 // Simple, single-line text input box
-#[derive(Default)]
+#[derive(Debug, Default, Clone)]
 pub struct TextInput {}
 
 #[derive(Debug, Default, Clone)]
 pub struct TextInputState {
     pub value: String,
     pub selection: [usize; 2],
-    area: Rect,
+    pub area: Rect,
     last_click: Option<Instant>,
 }
 
@@ -159,5 +159,55 @@ impl TextInputState {
 
     fn sel_max(&self) -> usize {
         *self.selection.iter().max().unwrap()
+    }
+
+    pub fn get_word_bounds(&self) -> Option<[usize; 2]> {
+        let mut idx = self.cursor();
+        let mut bounds: [usize; 2] = [0, 0];
+
+        if self.value.len() == 0 {
+            return None;
+        }
+
+        while let Some(char) = self.value.chars().nth(idx - 1) {
+            if char.is_ascii_alphanumeric() {
+                idx -= 1;
+                bounds[0] = idx;
+            } else {
+                break;
+            }
+        }
+
+        idx = self.cursor();
+        while let Some(char) = self.value.chars().nth(idx - 1) {
+            if char.is_ascii_alphanumeric() {
+                bounds[1] = idx;
+                idx += 1;
+            } else {
+                break;
+            }
+        }
+
+        return Some(bounds);
+    }
+
+    pub fn get_word(&self) -> Option<String> {
+        if let Some(bounds) = self.get_word_bounds() {
+            Some(self.value[bounds[0]..bounds[1]].to_string())
+        } else {
+            None
+        }
+    }
+
+    pub fn set_word(&mut self, word: &str) {
+        if let Some(bounds) = self.get_word_bounds() {
+            println!("\n{:?}", bounds);
+            self.value = self.value[..bounds[0]].to_string() + &self.value[bounds[1]..];
+            self.value.insert_str(bounds[0], word);
+            self.set_cursor(bounds[0] + word.len());
+        } else {
+            self.value.insert_str(self.cursor(), word);
+            self.set_cursor(self.cursor() + word.len());
+        }
     }
 }

@@ -140,6 +140,11 @@ impl FuzzySearch for Vec<String> {
         for test_str in self.iter() {
             let mut search_idx = 0;
             let mut score = 0; // Lower score is better.
+            if test_str.len() == 0 {
+                // Never match empty strings.
+                scores.push(-1);
+                continue;
+            }
             for tc in test_str.chars() {
                 if tc == search.chars().nth(search_idx).unwrap() {
                     search_idx += 1;

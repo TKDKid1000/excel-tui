@@ -17,6 +17,7 @@ use ratatui::{
 use crate::{
     spreadsheet::{Spreadsheet, SPREADSHEET_MAX_COLS, SPREADSHEET_MAX_ROWS},
     ui::{
+        formula_suggestions::{FormulaSuggestions, FormulaSuggestionsState},
         infinite_table::{InfiniteTable, InfiniteTableState},
         text_input::{TextInput, TextInputState},
     },
@@ -52,8 +53,9 @@ pub struct App {
     pub spreadsheet: Spreadsheet,
     pub focused_area: AppArea,
 
-    pub editor_state: TextInputState,
+    pub formula_editor_state: TextInputState,
     pub infinite_table_state: InfiniteTableState,
+    pub formula_suggestions_state: FormulaSuggestionsState,
 
     exit: bool,
 }
@@ -70,17 +72,17 @@ impl App {
     fn render_frame(&mut self, frame: &mut Frame) {
         if self.focused_area == AppArea::Editor {
             frame.set_cursor_position(Position {
-                x: self.editor_state.cursor() as u16,
+                x: self.formula_editor_state.cursor() as u16,
                 y: 0,
             });
         } else {
-            self.editor_state.set_value(
+            self.formula_editor_state.set_value(
                 self.spreadsheet
                     .get_cell(&self.infinite_table_state.active_cell)
                     .to_string(),
             );
             // Needed so that cursor position doesn't persist and show text selection when unfocused.
-            self.editor_state.set_cursor(0);
+            self.formula_editor_state.set_cursor(0);
         }
 
         let main_layout = Layout::default()
@@ -88,16 +90,6 @@ impl App {
             .constraints(vec![Constraint::Length(1), Constraint::Fill(1)])
             .split(frame.area());
 
-        frame.render_stateful_widget(TextInput::default(), main_layout[0], &mut self.editor_state);
-        // frame.render_widget(
-        //     infinite_table(
-        //         &mut self.spreadsheet,
-        //         &self.infinite_table_state.active_cell,
-        //         &self.focused_area,
-        //         &mut self.formula_cache,
-        //     ),
-        //     main_layout[1],
-        // );
         frame.render_stateful_widget(
             InfiniteTable {
                 is_focused: self.focused_area == AppArea::Data,
@@ -107,6 +99,18 @@ impl App {
             },
             main_layout[1],
             &mut self.infinite_table_state,
+        );
+        frame.render_stateful_widget(
+            TextInput::default(),
+            main_layout[0],
+            &mut self.formula_editor_state,
+        );
+
+        self.formula_suggestions_state.text_input_state = self.formula_editor_state.clone();
+        frame.render_stateful_widget(
+            FormulaSuggestions::default(),
+            frame.area(),
+            &mut self.formula_suggestions_state,
         );
     }
 
@@ -196,14 +200,14 @@ impl App {
                     // Editing
                     KeyCode::F(2) => {
                         self.focused_area = AppArea::Editor;
-                        self.editor_state
-                            .set_cursor(self.editor_state.value().len());
+                        self.formula_editor_state
+                            .set_cursor(self.formula_editor_state.value().len());
                     }
                     KeyCode::Char(c) => {
                         self.focused_area = AppArea::Editor;
-                        self.editor_state.set_value(c.to_string());
-                        self.editor_state
-                            .set_cursor(self.editor_state.value().len());
+                        self.formula_editor_state.set_value(c.to_string());
+                        self.formula_editor_state
+                            .set_cursor(self.formula_editor_state.value().len());
                     }
                     KeyCode::Backspace | KeyCode::Delete => {
                         self.spreadsheet
@@ -223,25 +227,32 @@ impl App {
     }
 
     fn handle_editor_event(&mut self, event: &Event) {
-        self.editor_state.handle_event(&event);
+        self.formula_editor_state.handle_event(&event);
+        self.formula_suggestions_state.handle_event(&event);
+        self.formula_editor_state = self.formula_suggestions_state.text_input_state.clone();
+
         match event {
             Event::Key(key_event) => match key_event.code {
                 KeyCode::Enter => {
+                    if self.formula_suggestions_state.visible {
+                        return;
+                    }
+
                     self.focused_area = AppArea::Data;
                     self.spreadsheet.set_cell(
                         &self.infinite_table_state.active_cell,
-                        &self.editor_state.value(),
+                        &self.formula_editor_state.value(),
                     );
                     self.infinite_table_state.formula_cache.clear();
 
                     if self
                         .spreadsheet
                         .get_col_width(&self.infinite_table_state.active_cell)
-                        < self.editor_state.value().len() as u16
+                        < self.formula_editor_state.value().len() as u16
                     {
                         self.spreadsheet.set_col_width(
                             &self.infinite_table_state.active_cell,
-                            self.editor_state.value().len() as u16,
+                            self.formula_editor_state.value().len() as u16,
                         );
                     }
 
