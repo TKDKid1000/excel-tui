@@ -14,7 +14,7 @@ In theory, all Excel formulas should function in this TUI as well.
 
 - [ ] Menu bar
 - [ ] Status bar
-- [ ] Formula suggestions
+- [x] Formula suggestions
 - [ ] Multi-cell selections
 - [x] Support reference operators in formulas
 - [x] Scrolling of the table
