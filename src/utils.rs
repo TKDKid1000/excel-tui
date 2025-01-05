@@ -1,4 +1,8 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    hash::Hash,
+    iter::zip,
+};
 
 trait Memoizable {
     type Args;
@@ -81,5 +85,83 @@ impl StringPadding for String {
             }
         }
         working
+    }
+}
+
+pub trait LevenshteinDistance {
+    fn levenshtein(self, other: &str) -> usize;
+}
+
+impl LevenshteinDistance for String {
+    fn levenshtein(self, other: &str) -> usize {
+        let mut matrix = vec![vec![0; self.len()]; other.len()]; // Declare self.len() x other.len()
+                                                                 // matrix of zeroes
+        for i in 1..self.len() {
+            matrix[0][i] = i;
+        }
+
+        for j in 1..other.len() {
+            matrix[j][0] = j
+        }
+
+        for j in 1..other.len() {
+            for i in 1..self.len() {
+                let subs_cost = if self.chars().nth(i) == other.chars().nth(j) {
+                    0
+                } else {
+                    1
+                };
+
+                matrix[j][i] = *[
+                    matrix[j][i - 1] + 1,
+                    matrix[j - 1][i] + 1,
+                    matrix[j - 1][i - 1] + subs_cost,
+                ]
+                .iter()
+                .min()
+                .unwrap();
+            }
+        }
+
+        return matrix[other.len() - 1][self.len() - 1];
+    }
+}
+
+pub trait FuzzySearch {
+    fn fuzzy_search(self, search: &str, max_distance: usize) -> Vec<String>;
+}
+
+impl FuzzySearch for Vec<String> {
+    fn fuzzy_search(self, search: &str, max_distance: usize) -> Vec<String> {
+        // Uses a similar matching system to VSCode, where it returns strings that contain
+        // characters in the order of the search, sorting by the amount that are at the start.
+
+        let mut scores: Vec<i16> = Vec::new();
+        for test_str in self.iter() {
+            let mut search_idx = 0;
+            let mut score = 0; // Lower score is better.
+            for tc in test_str.chars() {
+                if tc == search.chars().nth(search_idx).unwrap() {
+                    search_idx += 1;
+                    if search_idx == search.len() {
+                        scores.push(score);
+                        break;
+                    }
+                } else {
+                    score += 1;
+                }
+            }
+            if search_idx != search.len() {
+                scores.push(-1); // -1 means failure, which will be filtered out.
+            }
+        }
+        let mut scores_map = zip(scores, self.clone())
+            .filter(|(score, _)| *score >= 0 && *score <= max_distance as i16)
+            .collect::<Vec<(i16, String)>>();
+        scores_map.sort_by_key(|s| s.0);
+        scores_map
+            .iter()
+            .map(|s| s.1.clone())
+            .collect::<Vec<String>>()
     }
 }
