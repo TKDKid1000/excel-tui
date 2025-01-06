@@ -39,6 +39,11 @@ impl FormulaSuggestions {
             return;
         }
 
+        if state.list_state.selected() == None {
+            // Excel has the first option selected by default
+            state.list_state.select(Some(0));
+        }
+
         let cursor = state.text_input_state.cursor();
         let suggestions_area = Rect::new(
             cursor as u16 + state.text_input_state.area.x,
@@ -124,16 +129,16 @@ impl FormulaSuggestionsState {
                     KeyCode::Down => {
                         self.list_state.select_next();
                     }
-                    KeyCode::Enter => {
+                    KeyCode::Tab => {
                         let suggestions = self.get_suggestions();
                         if suggestions.len() == 0 {
                             return;
                         }
                         if self.list_state.selected().is_none() {
-                            self.list_state.select(Some(1));
+                            self.list_state.select(Some(0));
                         }
-                        self.text_input_state
-                            .set_word(suggestions[self.list_state.selected().unwrap()].as_str());
+                        let word = suggestions[self.list_state.selected().unwrap()].clone() + "(";
+                        self.text_input_state.set_word(word.as_str());
                     }
                     _ => {
                         self.visible = false;

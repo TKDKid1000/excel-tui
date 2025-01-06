@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::formula_functions::{get_func, get_funcs};
 use crate::references::{parse_reference, Reference};
-use crate::spreadsheet::Spreadsheet;
+use crate::spreadsheet::{Spreadsheet, SpreadsheetCell};
 
 const OPERATORS: [&'static str; 19] = [
     "-", "%", "^", "^", "*", "/", "+", "&", "=", ">=", "<=", "<>", "<", ">", "@", "#", ":", ",",
@@ -63,11 +63,22 @@ impl Token {
     }
 
     pub fn as_f32(&self, spreadsheet: &Spreadsheet) -> f32 {
+        // TODO: Make this a Some function, returning None if it fails instead of 0.
         match self.token_type {
             TokenType::Number => self.content.parse::<f32>().unwrap(),
             TokenType::Boolean => {
                 if self.content == String::from("TRUE") {
                     1.0
+                } else {
+                    0.0
+                }
+            }
+            TokenType::Reference => {
+                // TODO: Support arrays of cells here
+                if let Ok(token) =
+                    spreadsheet.get_cell_value(self.referenced_cells().unwrap().first().unwrap())
+                {
+                    token.as_f32(spreadsheet)
                 } else {
                     0.0
                 }
@@ -83,17 +94,45 @@ impl Token {
             TokenType::String => self.content.parse::<f32>().is_ok(),
             // TODO: Handle multi-refs
             TokenType::Reference => {
-                self.content.split(",").all(|r| {
-                    if let Some(reference) = parse_reference(r) {
-                        if let Ok(cell_value) = spreadsheet.get_cell_value(&reference.get_cell()) {
-                            return cell_value.is_number(spreadsheet);
-                        }
+                if let Some(cells) = self.referenced_cells() {
+                    if let Ok(cell_value) = spreadsheet.get_cell_value(cells.first().unwrap()) {
+                        return cell_value.is_number(spreadsheet);
                     }
-                    false
-                })
-                // spreadsheet.get_cell_value()
+                }
+                false
             }
             _ => false,
+        }
+    }
+
+    pub fn as_string(&self, spreadsheet: &Spreadsheet) -> String {
+        match self.token_type {
+            TokenType::Boolean | TokenType::String | TokenType::Number => self.content.clone(),
+            TokenType::Reference => {
+                if let Ok(token) =
+                    spreadsheet.get_cell_value(self.referenced_cells().unwrap().first().unwrap())
+                {
+                    token.as_string(spreadsheet)
+                } else {
+                    String::new()
+                }
+            }
+            _ => String::new(),
+        }
+    }
+
+    pub fn referenced_cells(&self) -> Option<Vec<SpreadsheetCell>> {
+        if self.token_type == TokenType::Reference {
+            Some(
+                self.reference_set
+                    .clone()
+                    .unwrap()
+                    .iter()
+                    .map(|r| r.get_cell())
+                    .collect(),
+            )
+        } else {
+            None
         }
     }
 }
@@ -575,7 +614,8 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
                     "&" => {
                         let b = eval_stack.pop().unwrap();
 
-                        let mut concatenated = b.content + a.content.as_str();
+                        let mut concatenated =
+                            b.as_string(spreadsheet) + a.as_string(spreadsheet).as_str();
 
                         // Determine type of concatenated variable (it may be a string, number, or boolean)
                         let mut concatenated_type = TokenType::String;
@@ -648,7 +688,11 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
         }
     }
 
+    if eval_stack.first().unwrap().token_type == TokenType::Reference {
+        let cells = eval_stack.pop().unwrap().referenced_cells().unwrap();
+        eval_stack.push(spreadsheet.get_cell_value(&cells.first().unwrap()).unwrap());
+    }
+
     // TODO: Allow returning multiple things for those oddly specific functions
     Ok(eval_stack.first().unwrap().clone())
-    // Ok(eval_stack.first().unwrap().content.to_string()) // TODO: Don't return just a String
 }

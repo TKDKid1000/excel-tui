@@ -234,9 +234,9 @@ impl App {
         match event {
             Event::Key(key_event) => match key_event.code {
                 KeyCode::Enter => {
-                    if self.formula_suggestions_state.visible {
-                        return;
-                    }
+                    // if self.formula_suggestions_state.visible {
+                    //     return;
+                    // }
 
                     self.focused_area = AppArea::Data;
                     self.spreadsheet.set_cell(
