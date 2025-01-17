@@ -1,17 +1,19 @@
 use std::io::{stdout, Result, Stdout};
 
+use copypasta::{ClipboardContext, ClipboardProvider};
 use ratatui::{
     backend::CrosstermBackend,
     crossterm::{
         event::{
             self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
-            KeyModifiers,
+            KeyModifiers, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+            PushKeyboardEnhancementFlags,
         },
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     },
     layout::{Constraint, Direction, Layout, Position},
-    Frame, Terminal,
+    text, Frame, Terminal,
 };
 
 use crate::{
@@ -28,6 +30,10 @@ pub type TUI = Terminal<CrosstermBackend<Stdout>>;
 pub fn init() -> Result<TUI> {
     execute!(stdout(), EnterAlternateScreen)?;
     execute!(stdout(), EnableMouseCapture)?;
+    execute!(
+        stdout(),
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    )?;
     enable_raw_mode()?;
     Terminal::new(CrosstermBackend::new(stdout()))
 }
@@ -35,6 +41,7 @@ pub fn init() -> Result<TUI> {
 pub fn restore() -> Result<()> {
     execute!(stdout(), LeaveAlternateScreen)?;
     execute!(stdout(), DisableMouseCapture)?;
+    execute!(stdout(), PopKeyboardEnhancementFlags)?;
     disable_raw_mode()?;
     Ok(())
 }
@@ -145,16 +152,32 @@ impl App {
                 match key_event.code {
                     // Cell movement
                     KeyCode::Right => {
-                        self.infinite_table_state.move_active_cell(1, 0);
+                        self.infinite_table_state.move_active_cell(
+                            1,
+                            0,
+                            key_event.modifiers.contains(KeyModifiers::SHIFT),
+                        );
                     }
                     KeyCode::Left => {
-                        self.infinite_table_state.move_active_cell(-1, 0);
+                        self.infinite_table_state.move_active_cell(
+                            -1,
+                            0,
+                            key_event.modifiers.contains(KeyModifiers::SHIFT),
+                        );
                     }
                     KeyCode::Down => {
-                        self.infinite_table_state.move_active_cell(0, 1);
+                        self.infinite_table_state.move_active_cell(
+                            0,
+                            1,
+                            key_event.modifiers.contains(KeyModifiers::SHIFT),
+                        );
                     }
                     KeyCode::Up => {
-                        self.infinite_table_state.move_active_cell(0, -1);
+                        self.infinite_table_state.move_active_cell(
+                            0,
+                            -1,
+                            key_event.modifiers.contains(KeyModifiers::SHIFT),
+                        );
                     }
 
                     // Movement (enter/tab)
@@ -195,6 +218,60 @@ impl App {
                                 .get_col_width(&self.infinite_table_state.active_cell)
                                 - 1,
                         );
+                    }
+
+                    // Undo/Redo
+                    KeyCode::Char('z')
+                        if key_event.modifiers.contains(KeyModifiers::SUPER)
+                            && key_event.modifiers.contains(KeyModifiers::SHIFT) =>
+                    {
+                        if let Some([sel_start, sel_end]) = self.spreadsheet.redo() {
+                            self.infinite_table_state.active_cell = sel_start;
+                            self.infinite_table_state.selection_end = sel_end;
+                            self.infinite_table_state.formula_cache.clear();
+                        }
+                    }
+                    KeyCode::Char('z') if key_event.modifiers.contains(KeyModifiers::SUPER) => {
+                        if let Some([sel_start, sel_end]) = self.spreadsheet.undo() {
+                            self.infinite_table_state.active_cell = sel_start;
+                            self.infinite_table_state.selection_end = sel_end;
+                            self.infinite_table_state.formula_cache.clear();
+                        }
+                    }
+
+                    // Copy/Paste
+                    KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                        // TODO: Once selections are added, this needs multiple changes.
+                        // TODO: Copying and pasting of formulas, not just their results.
+                        let text = self
+                            .spreadsheet
+                            .select_matrix(
+                                &self.infinite_table_state.active_cell,
+                                &self.infinite_table_state.selection_end,
+                            )
+                            .iter()
+                            .map(|r| r.join("\t"))
+                            .collect::<Vec<String>>()
+                            .join("\n");
+
+                        let mut clipboard = ClipboardContext::new().unwrap();
+                        clipboard.set_contents(text).unwrap();
+                    }
+                    KeyCode::Char('v') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                        // TODO: Once selections are added, this needs multiple changes.
+                        // TODO: Copying and pasting of formulas, not just their results.
+
+                        let mut clipboard = ClipboardContext::new().unwrap();
+
+                        if let Ok(text) = clipboard.get_contents() {
+                            let mat: Vec<Vec<String>> = text
+                                .to_string()
+                                .split("\n")
+                                .map(|r| r.split("\t").map(|c| c.to_string()).collect())
+                                .collect();
+                            self.spreadsheet
+                                .replace_matrix(&self.infinite_table_state.active_cell, mat);
+                        }
                     }
 
                     // Editing
@@ -256,12 +333,10 @@ impl App {
                         );
                     }
 
-                    if key_event.modifiers.contains(KeyModifiers::SHIFT)
-                        && self.infinite_table_state.active_cell.row > 0
-                    {
-                        self.infinite_table_state.active_cell.row -= 1
-                    } else if self.infinite_table_state.active_cell.row < SPREADSHEET_MAX_ROWS {
-                        self.infinite_table_state.active_cell.row += 1
+                    if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                        self.infinite_table_state.move_active_cell(0, -1, false);
+                    } else {
+                        self.infinite_table_state.move_active_cell(0, 1, false);
                     }
                 }
                 KeyCode::Esc => self.focused_area = AppArea::Data,

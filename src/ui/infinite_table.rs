@@ -1,4 +1,7 @@
-use std::{cmp::min, collections::HashMap};
+use std::{
+    cmp::{max, min},
+    collections::HashMap,
+};
 
 use ratatui::{
     buffer::Buffer,
@@ -70,15 +73,17 @@ pub struct InfiniteTable<'a> {
 #[derive(Debug, Default, Clone)]
 pub struct InfiniteTableState {
     pub active_cell: SpreadsheetCell,
+    pub selection_end: SpreadsheetCell,
+
     vertical_scroll: u32,
-    horizontal_scroll: u16,
+    horizontal_scroll: u32,
     pub formula_cache: HashMap<SpreadsheetCell, String>,
 
     visible_rows: [u32; 2],
     visible_cols: [u16; 2],
     cells: HashMap<SpreadsheetCell, Rect>,
 
-    col_edges: [u16; 2],
+    col_edges: [u32; 2],
 
     area: Rect,
 }
@@ -181,6 +186,25 @@ impl<'a> InfiniteTable<'a> {
                 );
 
                 let mut cell_style = Style::new();
+
+                // Test if cell is inside selection
+                let min_row = min(state.selection_end.row, state.active_cell.row);
+                let min_col = min(state.selection_end.col, state.active_cell.col);
+                let max_row = max(state.selection_end.row, state.active_cell.row);
+                let max_col = max(state.selection_end.col, state.active_cell.col);
+
+                if cell.col >= min_col
+                    && cell.col <= max_col
+                    && cell.row >= min_row
+                    && cell.row <= max_row
+                {
+                    // TODO: If in selection
+                    cell_style = cell_style.bg(Color::DarkGray).fg(Color::Black);
+                    if !self.is_focused {
+                        cell_style = cell_style.bg(Color::Gray);
+                    }
+                }
+
                 if state.active_cell == cell {
                     cell_style = cell_style.bg(Color::White).fg(Color::Black);
                     if !self.is_focused {
@@ -225,21 +249,33 @@ impl<'a> InfiniteTable<'a> {
             }
         }
 
+        let a = self.col_widths[..=state.visible_cols[1] as usize + 1]
+            .iter()
+            .map(|c| (c + self.col_space) as u32)
+            .sum::<u32>();
+        // println!(
+        //     "a{} b{} c{} d{}",
+        //     a,
+        //     area.width,
+        //     self.col_space,
+        //     a - area.width as u32 - self.col_space as u32
+        // );
         state.col_edges = [
             if state.visible_cols[0] == 0 {
                 0
             } else {
                 self.col_widths[1..state.visible_cols[0] as usize]
                     .iter()
-                    .map(|c| c + self.col_space)
-                    .sum::<u16>()
+                    .map(|c| (c + self.col_space) as u32)
+                    .sum::<u32>()
             },
+            // TODO: Bug here when you scroll a large amount and I haven't a clue why
             self.col_widths[..=state.visible_cols[1] as usize + 1]
                 .iter()
-                .map(|c| c + self.col_space)
-                .sum::<u16>()
-                - area.width
-                - self.col_space,
+                .map(|c| (c + self.col_space) as u32)
+                .sum::<u32>()
+                - area.width as u32
+                - self.col_space as u32,
         ];
 
         state.area = area;
@@ -285,23 +321,34 @@ impl InfiniteTableState {
                             self.vertical_scroll -= 1;
                         }
                     }
-                    MouseEventKind::ScrollLeft => {
+                    MouseEventKind::ScrollRight => {
                         self.horizontal_scroll += 1;
                     }
-                    MouseEventKind::ScrollRight => {
+                    MouseEventKind::ScrollLeft => {
                         if self.horizontal_scroll >= 1 {
                             self.horizontal_scroll -= 1;
                         }
                     }
                     MouseEventKind::Down(_) => {
                         // TODO: Handle other mouse buttons (certainly needed here)
-
                         for (cell, rect) in self.cells.iter() {
                             if rect.contains(Position {
                                 x: mouse_event.column,
                                 y: mouse_event.row,
                             }) {
                                 self.active_cell = cell.clone();
+                                self.selection_end = cell.clone();
+                            }
+                        }
+                    }
+                    MouseEventKind::Drag(_) => {
+                        // TODO: Handle other mouse buttons (certainly needed here)
+                        for (cell, rect) in self.cells.iter() {
+                            if rect.contains(Position {
+                                x: mouse_event.column,
+                                y: mouse_event.row,
+                            }) {
+                                self.selection_end = cell.clone();
                             }
                         }
                     }
@@ -312,39 +359,50 @@ impl InfiniteTableState {
         }
     }
 
-    pub fn move_active_cell(&mut self, x: i32, y: i32) {
+    pub fn move_active_cell(&mut self, x: i32, y: i32, group: bool) {
+        // TODO: When a box is selected, make this navigate through the box.
+        let mut cell = if group {
+            self.selection_end.clone()
+        } else {
+            self.active_cell.clone()
+        };
+
         let mut dx = x;
-        while dx > 0 && self.active_cell.col < SPREADSHEET_MAX_COLS {
-            self.active_cell.col += 1;
+        while dx > 0 && cell.col < SPREADSHEET_MAX_COLS {
+            cell.col += 1;
             dx -= 1;
-            if self.visible_cols[1] < self.active_cell.col as u16 {
+            if self.visible_cols[1] < cell.col as u16 {
                 self.horizontal_scroll = self.col_edges[1];
             }
         }
-        while dx < 0 && self.active_cell.col > 0 {
-            self.active_cell.col -= 1;
+        while dx < 0 && cell.col > 0 {
+            cell.col -= 1;
             dx += 1;
-            if self.visible_cols[0] > self.active_cell.col as u16 {
+            if self.visible_cols[0] > cell.col as u16 {
                 self.horizontal_scroll = self.col_edges[0];
             }
         }
 
         let mut dy = y;
-        while dy > 0 && self.active_cell.row < SPREADSHEET_MAX_ROWS {
-            self.active_cell.row += 1;
+        while dy > 0 && cell.row < SPREADSHEET_MAX_ROWS {
+            cell.row += 1;
             dy -= 1;
-            if self.visible_rows[1] <= self.active_cell.row as u32 {
+            if self.visible_rows[1] <= cell.row as u32 {
                 // TODO: Scroll by row height, once implemented.
                 self.vertical_scroll += 1;
             }
         }
-        while dy < 0 && self.active_cell.row > 0 {
-            self.active_cell.row -= 1;
+        while dy < 0 && cell.row > 0 {
+            cell.row -= 1;
             dy += 1;
-            if self.visible_rows[0] > self.active_cell.row as u32 {
+            if self.visible_rows[0] > cell.row as u32 {
                 // TODO: Scroll by row height, once implemented.
                 self.vertical_scroll -= 1;
             }
         }
+        if !group {
+            self.active_cell = cell.clone()
+        }
+        self.selection_end = cell
     }
 }

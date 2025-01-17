@@ -15,13 +15,13 @@ In theory, all Excel formulas should function in this TUI as well.
 - [ ] Menu bar
 - [ ] Status bar
 - [x] Formula suggestions
-- [ ] Multi-cell selections
+- [x] Multi-cell selections
 - [x] Support reference operators in formulas
 - [x] Scrolling of the table
 - [ ] Make it an actual CLI
 - [ ] Application of functions and operations along a range of cells (ie. `A1:B2+3`)
 - [x] Cache the application's function rendering state and only update it when cells change
-- [ ] Undo and redo
+- [x] Undo and redo
 - [x] Mouse support
 - [ ] Multi-sheet spreadsheets and XLSX support
 - [ ] Theming and changing the color scheme

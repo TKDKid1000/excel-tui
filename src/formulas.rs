@@ -47,7 +47,7 @@ impl Token {
     pub fn function(content: String, n_args: u8) -> Token {
         Token {
             token_type: TokenType::Function,
-            content: content,
+            content,
             function_n_args: Some(n_args),
             reference_set: None,
         }

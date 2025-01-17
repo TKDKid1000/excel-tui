@@ -10,6 +10,7 @@ mod formulas;
 mod references;
 mod spreadsheet;
 mod ui;
+mod undo_stack;
 mod utils;
 
 fn main() -> Result<()> {

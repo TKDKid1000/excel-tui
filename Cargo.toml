@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+copypasta = "0.10.1"
 rand = "0.8.5"
 ratatui = "0.28.1"
 strum = "0.26.3"
