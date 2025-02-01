@@ -47,6 +47,12 @@ pub struct SpreadsheetEdit {
     after: String,
 }
 
+impl PartialEq for SpreadsheetEdit {
+    fn eq(&self, other: &Self) -> bool {
+        self.after == other.after
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Spreadsheet {
     data: Vec<SpreadsheetRow>,
@@ -59,7 +65,7 @@ impl Spreadsheet {
     pub fn new() -> Self {
         Self {
             data: Vec::new(),
-            col_widths: Vec::new(),
+            col_widths: vec![DEFAULT_COL_WIDTH; SPREADSHEET_MAX_COLS],
             row_heights: Vec::new(),
             undo_stack: UndoStack::default(),
         }

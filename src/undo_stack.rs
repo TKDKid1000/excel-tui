@@ -4,7 +4,11 @@ pub struct UndoStack<T: Clone> {
     redo: Vec<T>,
 }
 
-impl<T: Clone> Default for UndoStack<T> {
+impl<T> Default for UndoStack<T>
+where
+    T: Clone,
+    T: PartialEq,
+{
     fn default() -> Self {
         Self {
             undo: Vec::new(),
@@ -13,7 +17,11 @@ impl<T: Clone> Default for UndoStack<T> {
     }
 }
 
-impl<T: Clone> UndoStack<T> {
+impl<T> UndoStack<T>
+where
+    T: Clone,
+    T: PartialEq,
+{
     pub fn can_undo(self) -> bool {
         self.undo.len() > 0
     }
@@ -39,6 +47,11 @@ impl<T: Clone> UndoStack<T> {
     }
 
     pub fn edit(&mut self, edit: T) {
+        if let Some(last) = self.undo.last() {
+            if last == &edit {
+                return;
+            }
+        }
         self.redo.clear();
         self.undo.push(edit);
     }
