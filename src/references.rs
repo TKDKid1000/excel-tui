@@ -12,10 +12,10 @@ pub struct Reference {
 
 impl Reference {
     pub fn range(&self, other: &Reference) -> Vec<Reference> {
-        let min_row = min(self.row, other.row).unwrap();
-        let min_col = min(self.col, other.col).unwrap();
-        let max_row = max(self.row, other.row).unwrap();
-        let max_col = max(self.col, other.col).unwrap();
+        let min_row = min(self.row, other.row).unwrap_or(0);
+        let min_col = min(self.col, other.col).unwrap_or(0);
+        let max_row = max(self.row, other.row).unwrap_or(0);
+        let max_col = max(self.col, other.col).unwrap_or(0);
 
         let mut cells: Vec<Reference> = Vec::new();
 
@@ -40,10 +40,10 @@ impl Reference {
             );
         }
         if self.row.is_some() {
-            return format!("{}", self.row.unwrap());
+            return format!("{}", self.row.unwrap_or(0));
         }
         if self.col.is_some() {
-            return format!("{}", self.row.unwrap());
+            return format!("{}", self.row.unwrap_or(0));
         }
         return String::new();
     }
@@ -58,7 +58,7 @@ impl Reference {
             // 1-indexed alphabet index, found from subtracting the unicode
             // number for @ (the character before A) from the letter's number
             let alphabet_idx = c as u32 - '@' as u32;
-            index += alphabet_idx * 26u32.pow(rev_idx as u32);
+            index += alphabet_idx.wrapping_mul(26u32.pow(rev_idx as u32));
         }
 
         Some(index)
@@ -144,4 +144,3 @@ pub fn parse_reference(text: &str) -> Option<Reference> {
         },
     })
 }
-

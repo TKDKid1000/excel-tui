@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 
 use crate::formula_functions::{get_func, get_funcs};
 use crate::references::{parse_reference, Reference};
@@ -152,6 +152,19 @@ pub fn find_close_paren(formula: &str, start_idx: usize) -> Option<usize> {
     None
 }
 
+pub fn balance_parens(formula: &str) -> String {
+    // A naive-feeling (but functional from my tests) parenthesis balancer
+    let open = formula.matches("(").count();
+    let close = formula.matches(")").count();
+    if open == close {
+        formula.to_string()
+    } else if open > close {
+        formula.to_string() + &")".repeat(open - close)
+    } else {
+        "(".repeat(close - open) + formula
+    }
+}
+
 pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
     let mut parsed: Vec<Token> = Vec::new();
     let mut func_close_parens: Vec<usize> = Vec::new();
@@ -278,7 +291,11 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
 
     // Handle special cases of dual-meaning operators ("-" and "," and " ")
     let mut to_remove: Vec<usize> = Vec::new();
-    for idx in 0..parsed.len() - 1 {
+    for idx in 0..parsed.len() {
+        if idx == parsed.len() - 1 {
+            // Skip last item. This is easier than adjusting the range.
+            continue;
+        }
         if parsed[idx].token_type == TokenType::Operator
             && parsed[idx].content == "-"
             && (idx == 0 || parsed[idx - 1].token_type != TokenType::Number)
@@ -350,6 +367,28 @@ pub fn parse_formula(formula: &str) -> Result<Vec<Token>, ()> {
     }
 
     return Ok(parsed);
+}
+
+pub fn extract_references(formula: &str) -> Result<Vec<SpreadsheetCell>, ()> {
+    let parsed = parse_formula(formula)?;
+    // TODO: Potential issue with operators not being directly next to refs, but I'm ignoring it
+    // for now.
+    let notable_tokens = parsed
+        .into_iter()
+        .filter(|t| {
+            t.token_type == TokenType::Reference
+                || (t.token_type == TokenType::Operator
+                    && [":", ",", " "].contains(&t.content.as_str()))
+        })
+        .collect::<Vec<Token>>();
+
+    let result = eval_tokens(notable_tokens, &Spreadsheet::new())?;
+
+    if let Some(refs) = result.referenced_cells() {
+        Ok(refs)
+    } else {
+        Err(())
+    }
 }
 
 fn get_operator_precedence(operator: &str) -> u8 {
@@ -427,7 +466,13 @@ pub fn cell_to_token(cell_value: &str, spreadsheet: &Spreadsheet) -> Result<Toke
     // Parses a single cell as a single value (boolean or number), else a string
     // Unless, of course, it's another formula-
     if cell_value.starts_with("=") {
-        return eval_formula(&cell_value[1..], spreadsheet);
+        let mut result = eval_formula(&cell_value[1..], spreadsheet)?;
+
+        if result.token_type == TokenType::Reference {
+            let cells = result.referenced_cells().unwrap();
+            result = spreadsheet.get_cell_value(&cells.first().unwrap())?;
+        }
+        return Ok(result);
     }
     let mut token_type = TokenType::Number;
     if cell_value.chars().all(|c| c.is_ascii_digit() || c == '.') {
@@ -439,14 +484,18 @@ pub fn cell_to_token(cell_value: &str, spreadsheet: &Spreadsheet) -> Result<Toke
 }
 
 pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, ()> {
-    let parsed = parse_formula(formula).unwrap_or_default(); // TODO: Add some error checking
+    let parsed = parse_formula(formula)?;
 
+    eval_tokens(parsed, spreadsheet)
+}
+
+pub fn eval_tokens(tokens: Vec<Token>, spreadsheet: &Spreadsheet) -> Result<Token, ()> {
     // TODO: Support for non-numbers
     let mut output_queue: Vec<Token> = Vec::new();
     let mut operator_stack: Vec<Token> = Vec::new();
     // let mut function_stack: Vec<Token> = Vec::new();
 
-    for token in parsed.iter() {
+    for token in tokens.iter() {
         // println!("{:?} {:?}", token.token_type, token.content.clone());
         match token.token_type {
             TokenType::LeftParen => {
@@ -570,10 +619,13 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
             TokenType::Operator => {
                 // TODO: Add support for non-arithmetic operators
                 let operator = token.content.as_str();
-                let a = eval_stack.pop().unwrap();
+                let a = match eval_stack.pop() {
+                    Some(it) => it,
+                    None => return Err(()),
+                };
                 match operator {
                     ":" | "," | " " => {
-                        let b = eval_stack.pop().unwrap();
+                        let b = eval_stack.pop().ok_or(())?;
                         if !(a.token_type == TokenType::Reference
                             && b.token_type == TokenType::Reference)
                         {
@@ -655,6 +707,18 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
                         args.push(eval_stack.pop().unwrap());
                     }
                     args.reverse(); // Makes writing the functions a hell of a lot easier
+
+                    // TODO: Modify args to reduce References down to literal values, unless it's a
+                    // multi-reference
+                    for arg in args.iter_mut() {
+                        if arg.token_type == TokenType::Reference
+                            && arg.referenced_cells().unwrap().len() == 1
+                        {
+                            *arg = spreadsheet
+                                .get_cell_value(arg.referenced_cells().unwrap().first().unwrap())?;
+                        }
+                    }
+
                     if let Ok(result) = func.call(args.as_slice(), spreadsheet) {
                         // println!("Result of function {}: {:?}", token.content, result);
                         eval_stack.extend(result);
@@ -688,11 +752,10 @@ pub fn eval_formula(formula: &str, spreadsheet: &Spreadsheet) -> Result<Token, (
         }
     }
 
-    if eval_stack.first().unwrap().token_type == TokenType::Reference {
-        let cells = eval_stack.pop().unwrap().referenced_cells().unwrap();
-        eval_stack.push(spreadsheet.get_cell_value(&cells.first().unwrap()).unwrap());
-    }
-
     // TODO: Allow returning multiple things for those oddly specific functions
-    Ok(eval_stack.first().unwrap().clone())
+    if let Some(first) = eval_stack.first() {
+        Ok(first.clone())
+    } else {
+        Err(())
+    }
 }

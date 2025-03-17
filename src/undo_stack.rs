@@ -1,3 +1,7 @@
+use std::fmt::{Debug, Display};
+
+use crate::undo_stack;
+
 #[derive(Debug)]
 pub struct UndoStack<T: Clone> {
     undo: Vec<T>,
@@ -21,6 +25,7 @@ impl<T> UndoStack<T>
 where
     T: Clone,
     T: PartialEq,
+    T: Debug,
 {
     pub fn can_undo(self) -> bool {
         self.undo.len() > 0
@@ -54,5 +59,21 @@ where
         }
         self.redo.clear();
         self.undo.push(edit);
+    }
+}
+
+impl<T> Display for UndoStack<T>
+where
+    T: Clone,
+    T: PartialEq,
+    T: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}/{}",
+            self.undo.len(),
+            self.undo.len() + self.redo.len()
+        )
     }
 }

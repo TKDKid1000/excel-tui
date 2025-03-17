@@ -18,13 +18,18 @@ In theory, all Excel formulas should function in this TUI as well.
 - [x] Multi-cell selections
 - [x] Support reference operators in formulas
 - [x] Scrolling of the table
-- [ ] Make it an actual CLI
+- [x] Make it an actual CLI
 - [ ] Application of functions and operations along a range of cells (ie. `A1:B2+3`)
 - [x] Cache the application's function rendering state and only update it when cells change
 - [x] Undo and redo
 - [x] Mouse support
 - [ ] Multi-sheet spreadsheets and XLSX support
 - [ ] Theming and changing the color scheme
+- [ ] Inserting cells into formula by clicking in spreadsheet
+- [x] Highlighting cell ranges from active formula in spreadsheet
+- [ ] $ for cells when copy-pasting
+- [ ] Make horizontal scrolling a little bit smoother
+- [ ] Pasting blocks of text
 - [ ] A dozen other things
 
 ## Known Issues

@@ -14,7 +14,7 @@ pub fn get_funcs() -> &'static HashMap<&'static str, &'static (dyn FormulaFuncti
         m.insert("IF", &If {});
         m.insert("PI", &Pi {});
         m.insert("RAND", &Rand {});
-        m.insert("MEAN", &Mean {});
+        m.insert("AVERAGE", &Average {});
         m.insert("MEDIAN", &Median {});
         m
     })
@@ -124,8 +124,8 @@ impl FormulaFunction for Rand {
     }
 }
 
-struct Mean;
-impl FormulaFunction for Mean {
+struct Average;
+impl FormulaFunction for Average {
     fn call(&self, args: &[Token], spreadsheet: &Spreadsheet) -> Result<Vec<Token>, ()> {
         let mut nums: Vec<f32> = Vec::new();
         for arg in args {

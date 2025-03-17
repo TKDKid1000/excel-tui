@@ -5,24 +5,30 @@ use ratatui::{
     backend::CrosstermBackend,
     crossterm::{
         event::{
-            self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
-            KeyModifiers, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
-            PushKeyboardEnhancementFlags,
+            self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
+            EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+            KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
         },
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     },
-    layout::{Constraint, Direction, Layout, Position},
-    text, Frame, Terminal,
+    layout::{Constraint, Direction, Layout, Position, Rect},
+    text::Line,
+    widgets::Paragraph,
+    Frame, Terminal,
 };
 
 use crate::{
+    config::Config,
+    formulas::{balance_parens, extract_references},
     spreadsheet::{Spreadsheet, SPREADSHEET_MAX_COLS, SPREADSHEET_MAX_ROWS},
     ui::{
+        button::{Button, ButtonState},
         formula_suggestions::{FormulaSuggestions, FormulaSuggestionsState},
         infinite_table::{InfiniteTable, InfiniteTableState},
         text_input::{TextInput, TextInputState},
     },
+    undo_stack,
 };
 
 pub type TUI = Terminal<CrosstermBackend<Stdout>>;
@@ -34,6 +40,7 @@ pub fn init() -> Result<TUI> {
         stdout(),
         PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
     )?;
+    execute!(stdout(), EnableBracketedPaste)?;
     enable_raw_mode()?;
     Terminal::new(CrosstermBackend::new(stdout()))
 }
@@ -42,6 +49,7 @@ pub fn restore() -> Result<()> {
     execute!(stdout(), LeaveAlternateScreen)?;
     execute!(stdout(), DisableMouseCapture)?;
     execute!(stdout(), PopKeyboardEnhancementFlags)?;
+    execute!(stdout(), DisableBracketedPaste)?;
     disable_raw_mode()?;
     Ok(())
 }
@@ -55,7 +63,7 @@ pub enum AppArea {
     CommandBar,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct App {
     pub spreadsheet: Spreadsheet,
     pub focused_area: AppArea,
@@ -63,11 +71,30 @@ pub struct App {
     pub formula_editor_state: TextInputState,
     pub infinite_table_state: InfiniteTableState,
     pub formula_suggestions_state: FormulaSuggestionsState,
+    pub paste_button_state: ButtonState,
+
+    pub config: Config,
 
     exit: bool,
 }
 
 impl App {
+    pub fn new(config: Config) -> Self {
+        App {
+            spreadsheet: Spreadsheet::default(),
+            focused_area: AppArea::default(),
+
+            formula_editor_state: TextInputState::default(),
+            infinite_table_state: InfiniteTableState::default(),
+            formula_suggestions_state: FormulaSuggestionsState::default(),
+            paste_button_state: ButtonState::default(),
+
+            config,
+
+            exit: false,
+        }
+    }
+
     pub fn run(&mut self, terminal: &mut TUI) -> Result<()> {
         while !self.exit {
             terminal.draw(|f| self.render_frame(f))?;
@@ -94,7 +121,11 @@ impl App {
 
         let main_layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Length(1), Constraint::Fill(1)])
+            .constraints(vec![
+                Constraint::Length(1),
+                Constraint::Fill(1),
+                Constraint::Length(1),
+            ])
             .split(frame.area());
 
         frame.render_stateful_widget(
@@ -103,6 +134,18 @@ impl App {
                 col_widths: self.spreadsheet.col_widths.clone(),
                 col_space: 1,
                 spreadsheet: &self.spreadsheet,
+                highlights: if self.focused_area == AppArea::Editor
+                    && self.formula_editor_state.value().starts_with("=")
+                {
+                    if let Ok(refs) = extract_references(&self.formula_editor_state.value()) {
+                        vec![refs]
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                }, // TODO: Add something that parses the active formula (if one) and then
+                   // returns an array of [SpreadsheetCell; 2]
             },
             main_layout[1],
             &mut self.infinite_table_state,
@@ -113,11 +156,33 @@ impl App {
             &mut self.formula_editor_state,
         );
 
+        frame.render_widget(
+            Paragraph::new(format!("Undo: {}", self.spreadsheet.undo_stack)),
+            main_layout[2],
+        );
+
         self.formula_suggestions_state.text_input_state = self.formula_editor_state.clone();
         frame.render_stateful_widget(
             FormulaSuggestions::default(),
             frame.area(),
             &mut self.formula_suggestions_state,
+        );
+
+        frame.render_stateful_widget(
+            Button {
+                text: String::from(if self.config.nerd_font {
+                    "  "
+                } else {
+                    "txt"
+                }),
+            },
+            Rect {
+                x: 10,
+                y: 10,
+                width: 5,
+                height: 3,
+            },
+            &mut ButtonState::default(),
         );
     }
 
@@ -147,6 +212,11 @@ impl App {
 
     fn handle_data_event(&mut self, event: &Event) {
         self.infinite_table_state.handle_event(event);
+        self.paste_button_state.handle_event(event);
+        if self.paste_button_state.is_pressed {
+            // TODO: self.
+        }
+
         match event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 match key_event.code {
@@ -264,14 +334,24 @@ impl App {
                         let mut clipboard = ClipboardContext::new().unwrap();
 
                         if let Ok(text) = clipboard.get_contents() {
-                            let mat: Vec<Vec<String>> = text
+                            let mut mat: Vec<Vec<String>> = text
                                 .to_string()
                                 .split("\n")
                                 .map(|r| r.split("\t").map(|c| c.to_string()).collect())
                                 .collect();
-                            self.spreadsheet
-                                .replace_matrix(&self.infinite_table_state.active_cell, mat);
+                            let selection = self.infinite_table_state.selection();
+                            if mat.len() == 1 && mat[0].len() == 1 {
+                                // Handle the case where there is a single item in clipboard, where
+                                // it must be pasted to every cell in the selection.
+                                let rows = selection[1].row - selection[0].row + 1;
+                                let cols = selection[1].col - selection[0].col + 1;
+                                let value = mat[0][0].clone();
+                                mat = vec![vec![value; cols]; rows];
+                            }
+                            self.spreadsheet.replace_matrix(&selection[0], mat);
                         }
+
+                        self.infinite_table_state.formula_cache.clear()
                     }
 
                     // Editing
@@ -287,8 +367,12 @@ impl App {
                             .set_cursor(self.formula_editor_state.value().len());
                     }
                     KeyCode::Backspace | KeyCode::Delete => {
-                        self.spreadsheet
-                            .set_cell(&self.infinite_table_state.active_cell, "");
+                        let selection = self.infinite_table_state.selection();
+                        let rows = selection[1].row - selection[0].row + 1;
+                        let cols = selection[1].col - selection[0].col + 1;
+                        let mat = vec![vec![String::new(); cols]; rows];
+                        self.spreadsheet.replace_matrix(&selection[0], mat);
+
                         self.infinite_table_state.formula_cache.clear();
                     }
 
@@ -297,6 +381,25 @@ impl App {
                         self.infinite_table_state.formula_cache.clear();
                     }
                     _ => (),
+                }
+            }
+            Event::Paste(text) => {
+                if !text.is_empty() {
+                    let mut mat: Vec<Vec<String>> = text
+                        .to_string()
+                        .split("\n")
+                        .map(|r| r.split("\t").map(|c| c.to_string()).collect())
+                        .collect();
+                    let selection = self.infinite_table_state.selection();
+                    if mat.len() == 1 && mat[0].len() == 1 {
+                        // Handle the case where there is a single item in clipboard, where
+                        // it must be pasted to every cell in the selection.
+                        let rows = selection[1].row - selection[0].row + 1;
+                        let cols = selection[1].col - selection[0].col + 1;
+                        let value = mat[0][0].clone();
+                        mat = vec![vec![value; cols]; rows];
+                    }
+                    self.spreadsheet.replace_matrix(&selection[0], mat);
                 }
             }
             _ => (),
@@ -316,10 +419,15 @@ impl App {
                     // }
 
                     self.focused_area = AppArea::Data;
-                    self.spreadsheet.set_cell(
-                        &self.infinite_table_state.active_cell,
-                        &self.formula_editor_state.value(),
-                    );
+
+                    let value = if self.formula_editor_state.value().starts_with("=") {
+                        balance_parens(&self.formula_editor_state.value())
+                    } else {
+                        self.formula_editor_state.value()
+                    }; // TODO: Add a popup to confirm auto-balancing
+
+                    self.spreadsheet
+                        .set_cell(&self.infinite_table_state.active_cell, &value);
                     self.infinite_table_state.formula_cache.clear();
 
                     if self

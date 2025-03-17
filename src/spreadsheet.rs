@@ -1,7 +1,10 @@
 use std::cmp::{max, min};
-use std::fs;
+use std::fmt::Display;
 use std::io::{Error, ErrorKind};
 use std::ops::Index;
+use std::{cell, fs};
+
+use strum::Display;
 
 use crate::formulas::{cell_to_token, Token};
 use crate::undo_stack::UndoStack;
@@ -49,7 +52,13 @@ pub struct SpreadsheetEdit {
 
 impl PartialEq for SpreadsheetEdit {
     fn eq(&self, other: &Self) -> bool {
-        self.after == other.after
+        self.after == other.after && self.cell == other.cell
+    }
+}
+
+impl Display for SpreadsheetEdit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}: {} -> {}", self.cell, self.before, self.after)
     }
 }
 
@@ -58,7 +67,7 @@ pub struct Spreadsheet {
     data: Vec<SpreadsheetRow>,
     pub col_widths: Vec<u16>,
     row_heights: Vec<u16>,
-    undo_stack: UndoStack<Vec<SpreadsheetEdit>>,
+    pub undo_stack: UndoStack<Vec<SpreadsheetEdit>>,
 }
 
 impl Spreadsheet {

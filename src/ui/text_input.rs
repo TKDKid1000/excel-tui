@@ -200,8 +200,9 @@ impl TextInputState {
     }
 
     pub fn set_word(&mut self, word: &str) {
+        println!("here");
         if let Some(bounds) = self.get_word_bounds() {
-            println!("\n{:?}", bounds);
+            println!("\n\n\n{:?}'{}'", bounds, self.value);
             self.value = self.value[..bounds[0]].to_string() + &self.value[bounds[1]..];
             self.value.insert_str(bounds[0], word);
             self.set_cursor(bounds[0] + word.len());

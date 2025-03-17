@@ -68,6 +68,7 @@ pub struct InfiniteTable<'a> {
     pub col_widths: Vec<u16>,
     pub col_space: u16,
     pub spreadsheet: &'a Spreadsheet,
+    pub highlights: Vec<Vec<SpreadsheetCell>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -203,6 +204,16 @@ impl<'a> InfiniteTable<'a> {
                     if !self.is_focused {
                         cell_style = cell_style.bg(Color::Gray);
                     }
+                }
+
+                if self
+                    .highlights
+                    .iter()
+                    .flatten()
+                    .find(|p| p == &&cell)
+                    .is_some()
+                {
+                    cell_style = cell_style.bg(Color::Green).fg(Color::White)
                 }
 
                 if state.active_cell == cell {
@@ -371,14 +382,14 @@ impl InfiniteTableState {
         while dx > 0 && cell.col < SPREADSHEET_MAX_COLS {
             cell.col += 1;
             dx -= 1;
-            if self.visible_cols[1] < cell.col as u16 {
+            if self.visible_cols[1] <= cell.col as u16 {
                 self.horizontal_scroll = self.col_edges[1];
             }
         }
         while dx < 0 && cell.col > 0 {
             cell.col -= 1;
             dx += 1;
-            if self.visible_cols[0] > cell.col as u16 {
+            if self.visible_cols[0] >= cell.col as u16 {
                 self.horizontal_scroll = self.col_edges[0];
             }
         }
@@ -404,5 +415,23 @@ impl InfiniteTableState {
             self.active_cell = cell.clone()
         }
         self.selection_end = cell
+    }
+
+    pub fn selection(&self) -> [SpreadsheetCell; 2] {
+        let min_row = *min(&self.selection_end.row, &self.active_cell.row);
+        let min_col = *min(&self.selection_end.col, &self.active_cell.col);
+        let max_row = *max(&self.selection_end.row, &self.active_cell.row);
+        let max_col = *max(&self.selection_end.col, &self.active_cell.col);
+
+        return [
+            SpreadsheetCell {
+                row: min_row,
+                col: min_col,
+            },
+            SpreadsheetCell {
+                row: max_row,
+                col: max_col,
+            },
+        ];
     }
 }
